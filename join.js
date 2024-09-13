@@ -104,7 +104,12 @@ function dbAddDb(db1, db2) {
   for (let [tag, rel] of db2.entries()) {
     relAddRel(selectRel(db1, tag), rel);
   }
+  return db1;
 }
+function clone(db) {
+  return dbAddDb(emptyDb(), db);
+}
+
 // todo, delta of this
 function dedup(db) {
   for (let rel of db.values()) {
@@ -304,33 +309,6 @@ function evalRule(db, { query, output }) {
 function parseRule(str) {
   let [query, output] = str.split("->").map(parseQuery);
   return { query, output };
-}
-
-function getId(id) {
-  return document.getElementById(id);
-}
-function create(type) {
-  let e = document.createElement(type);
-  childParent(e, getId("body"));
-  return e;
-}
-function childParent(child, parent) {
-  assert(child !== null, `${child}, ${parent}`);
-  let maybeParent = child.parentNode;
-  if (maybeParent) maybeParent.removeChild(child);
-  parent.appendChild(child);
-  return child;
-}
-function createChildElem(type, parent) {
-  return childParent(create(type), parent);
-}
-function createChildId(type, id) {
-  return createChildElem(type, getId(id));
-}
-function createElement(tag, id) {
-  let e = create(tag);
-  e.id = id;
-  return e;
 }
 
 // assert
@@ -554,4 +532,5 @@ export {
   dbAddTuple,
   af,
   str,
+  clone,
 };
