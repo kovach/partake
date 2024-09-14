@@ -14,6 +14,7 @@ import {
   dbContains,
   evalQuery,
   isLiteral,
+  valEqual,
 } from "./join.js";
 
 import * as d from "./dom.js";
@@ -480,7 +481,7 @@ window.onload = () => {
       mkLine({ name: "repl", ruleText, contexts, operations }),
     ]);
   }
-  go("after (token t)");
+  go("after (token a, token b)");
   //go(line2_);
   //go("land x, land y, land z, after (foo x y z)");
 };

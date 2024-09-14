@@ -201,10 +201,11 @@ function evalQuery(db, query, context = [{ bindings: {}, used: [] }]) {
 
 function valEqual(a, b) {
   if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length === b.length)
+    if (a.length === b.length) {
       for (let i = 0; i < a.length; i++)
         if (!valEqual(a[i], b[i])) return false;
-        else return true;
+      return true;
+    } else return false;
   }
   return a === b;
 }
@@ -588,4 +589,5 @@ export {
   dbContains,
   evalQuery,
   isLiteral,
+  valEqual,
 };
