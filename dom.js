@@ -20,16 +20,24 @@ function childParent(child, parent) {
   parent.appendChild(child);
   return child;
 }
-function createChildElem(type, parent) {
+function createChild(type, parent) {
   return childParent(create(type), parent);
 }
 function createChildId(type, id) {
-  return createChildElem(type, getId(id));
+  return createChild(type, getId(id));
 }
 function createElement(tag, id) {
   let e = create(tag);
   e.id = id;
   return e;
+}
+function* allChildren(node) {
+  yield node;
+  for (let child of node.children) {
+    for (let e of allChildren(child)) {
+      yield e;
+    }
+  }
 }
 
 export {
@@ -37,7 +45,8 @@ export {
   create,
   remove,
   childParent,
-  createChildElem,
+  createChild,
   createChildId,
   createElement,
+  allChildren,
 };

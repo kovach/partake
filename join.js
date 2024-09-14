@@ -96,6 +96,9 @@ function relAddRel(rel1, rel2) {
     relAddTupleWithKey(rel1, k, v[0], v[1]);
   }
 }
+function dbContains(db, tag, tuple) {
+  return dbGet(db, tag, tuple) > 0;
+}
 function dbAddTuple(db, tag, tuple, count = 1) {
   relAddTuple(selectRel(db, tag), tuple, count);
 }
@@ -156,6 +159,44 @@ function printDb(db) {
 }
 /* end variables */
 
+function literal(term) {
+  if (Array.isArray(term) && term.length === 2 && term[0] === "sym")
+    return "symbol";
+  return false;
+}
+
+// todo profile
+function extendBinding(c, tag, tuple, names) {
+  for (let index = 0; index < names.length; index++) {
+    let term = names[index];
+    if (literal(term) && term !== tuple[index]) return false;
+    else if (term in c.bindings && c.bindings[term] !== tuple[index])
+      return false;
+  }
+  c = structuredClone(c);
+  for (let index = 0; index < names.length; index++) {
+    let term = names[index];
+    if (literal(term)) continue;
+    c.bindings[term] = tuple[index];
+  }
+  c.used.push([tag, tuple]);
+  return c;
+}
+function* joinBindings(cs, { tag, tuples, names }) {
+  for (let c of cs) {
+    for (let tuple of tuples) {
+      let c_ = extendBinding(c, tag, tuple, names);
+      if (c_ !== false) yield c_;
+    }
+  }
+}
+
+function evalQuery(db, query, context = [{ bindings: {}, used: [] }]) {
+  return query
+    .map(([tag, names]) => ({ tag, names, tuples: iterRelTuples(db, tag) }))
+    .reduce(joinBindings, context);
+}
+
 function joinTuples(t, s) {
   t = structuredClone(t);
   // in!
@@ -208,9 +249,9 @@ function rename(tuple, names) {
 }
 
 function* selectPattern(db, p) {
-  for (let t_ of iterRel(db, p[0])) {
-    let t = rename(t_[0], p[1]);
-    if (t !== false) yield [t, t_[1]];
+  for (let [tuple, count] of iterRel(db, p[0])) {
+    let t = rename(tuple, p[1]);
+    if (t !== false) yield [t, count];
   }
 }
 
@@ -230,7 +271,9 @@ function* selectTuplesWithSource(db, p) {
 
 const joins = (db, ps, init = [{}, 1]) =>
   ps.map((p) => selectPattern(db, p)).reduce(join, [init]);
-const joinsCollect = (db, ps) => Array.from(joins(db, ps));
+const joinsWeighted = (db, ps, init = [{}, 1]) =>
+  ps.map((p) => selectPattern(db, p)).reduce(join, [init]);
+const joinsCollect = (db, ps) => Array.from(joinsWeighted(db, ps));
 
 /* section:parser */
 // todo: use parser generator?
@@ -273,8 +316,6 @@ function parseQuery(str) {
 // eta-expanded so that it has a `.name`
 const pp_parse = (x) => ppQuery(parseQuery(x));
 
-const evalQuery = (db, str) => Array.from(joins(db, parseQuery(str)));
-
 let globalIdCounter = 0;
 function freshId() {
   return ["sym", globalIdCounter++];
@@ -298,7 +339,7 @@ function unrename(tuple, atoms) {
 }
 
 function evalRule(db, { query, output }) {
-  let bindings = joins(db, query);
+  let bindings = joinsWeighted(db, query);
   for (let tuple of bindings) {
     for (let pattern of output) {
       emit(world, pattern[0], unrename(tuple, pattern[1]));
@@ -368,7 +409,7 @@ function* delta(ps, x, a) {
   let S = ps.slice(1);
   let Rx = selectPattern(x, R);
   let Ra = af(selectPattern(a, R));
-  let Sx = af(joins(x, S));
+  let Sx = af(joinsWeighted(x, S));
   let Sa = af(delta(S, x, a));
   for (let t of join(Ra, Sx)) yield t;
   for (let t of join(Rx, Sa)) yield t;
@@ -523,6 +564,7 @@ const node = {
 export {
   unrename,
   rename,
+  joinsWeighted,
   joins,
   joinTuples,
   selectTuples,
@@ -533,4 +575,7 @@ export {
   af,
   str,
   clone,
+  emptyDb,
+  dbContains,
+  evalQuery,
 };
