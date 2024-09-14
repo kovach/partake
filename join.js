@@ -159,24 +159,26 @@ function printDb(db) {
 }
 /* end variables */
 
-function literal(term) {
+function isLiteral(term) {
   if (Array.isArray(term) && term.length === 2 && term[0] === "sym")
-    return "symbol";
-  return false;
+    return term;
+  if (Number.isInteger(term)) return term;
+  return null;
 }
 
 // todo profile
 function extendBinding(c, tag, tuple, names) {
   for (let index = 0; index < names.length; index++) {
     let term = names[index];
-    if (literal(term) && term !== tuple[index]) return false;
-    else if (term in c.bindings && c.bindings[term] !== tuple[index])
+    if (isLiteral(term) && term !== tuple[index]) {
+      return false;
+    } else if (term in c.bindings && c.bindings[term] !== tuple[index])
       return false;
   }
   c = structuredClone(c);
   for (let index = 0; index < names.length; index++) {
     let term = names[index];
-    if (literal(term)) continue;
+    if (isLiteral(term)) continue;
     c.bindings[term] = tuple[index];
   }
   c.used.push([tag, tuple]);
@@ -197,12 +199,21 @@ function evalQuery(db, query, context = [{ bindings: {}, used: [] }]) {
     .reduce(joinBindings, context);
 }
 
+function valEqual(a, b) {
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length === b.length)
+      for (let i = 0; i < a.length; i++)
+        if (!valEqual(a[i], b[i])) return false;
+        else return true;
+  }
+  return a === b;
+}
+
 function joinTuples(t, s) {
   t = structuredClone(t);
-  // in!
   for (let key in s) {
     if (key in t) {
-      if (t[key] != s[key]) return false;
+      if (!valEqual(t[key], s[key])) return false;
     } else t[key] = s[key];
   }
   return t;
@@ -323,16 +334,14 @@ function freshId() {
 
 function unrename(tuple, atoms) {
   let result = [];
-  atoms.forEach((atom) => {
-    if (atom[0] === "`" || atom[0] === "'") {
-      result.push(atom.slice(1));
-    } else {
-      if (atom in tuple) result.push(tuple[atom]);
-      else {
-        let id = freshId();
-        tuple[atom] = id;
-        result.push(id);
-      }
+  atoms.forEach((term) => {
+    let val = isLiteral(term);
+    if (val !== null) result.push(term);
+    else if (term in tuple) result.push(tuple[term]);
+    else {
+      let id = freshId();
+      tuple[term] = id;
+      result.push(id);
     }
   });
   return result;
@@ -578,4 +587,5 @@ export {
   emptyDb,
   dbContains,
   evalQuery,
+  isLiteral,
 };

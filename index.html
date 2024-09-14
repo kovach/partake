@@ -10,7 +10,15 @@
         border: solid; */
         background-color: #ffff00;
       }
-      #a {
+      #container {
+        display: flex;
+        flex-direction: column;
+      }
+      #rule {
+        font-family: "Courier New", Courier, monospace;
+        font-size: 12pt;
+      }
+      .row {
         display: flex;
         margin: 10px;
         padding: 10px;
@@ -30,9 +38,14 @@
     </style>
   </head>
   <body id="body">
-    <div id="a">
-      <div id="left"></div>
-      <div id="right"></div>
+    <div id="container">
+      <div class="row">
+        <div id="left"></div>
+        <div id="right"></div>
+      </div>
+      <div class="row" id="rule">
+        <div></div>
+      </div>
     </div>
     <script type="importmap">
       {
