@@ -493,26 +493,64 @@ window.onload = () => {
 
 /* plan
 
-rule stepper
+declarative ui
+  these are not rules, they're hooks called when handling before/after
+    they render state declaratively, not events
+  for now, implement with rules and js function calls
+  create element dependent on tuple, store in lists
+    token t
+      lets try SVG
+  remove elements during deletion
+  land l, token t, in t l
+    just handle with parents
+  adjacent l1 l2
+    just coordinates for now
+      container-at l1 x y
+      container-at l2 x y
+
+end-to-end with graphics!!
+  display board, cards, tokens, hands, decks, growth-track
+  choose growth
+  choose cards, pay
+  fast phase
+  invader phase
+    ravage
+    build
+    explore
+  slow phase
+
+  mixed throughout above:
+    card activation
+    core concepts
+      push, gather, damage, energy, presence, range
+
+choose any
+remove second join implementation
+
+easy
+  turn db into class
+  introduce `do` for events?
+  parse rules
+  parse multi-line rules
+
+schemas?
+attach stack/rule data to each trace entry
+  call renderDb on choice mouseover
+  rule intermediate results
+render choice accept button with state clues
+  (1/2, done?)
 default actions (handle unique choice)
-highlight choices
 rule editor on screen
   reload rules
   undo to point on trace
+    need to store old stacks
 
+binding picker for each quantifier type
 
 **later**
 parse diffs
   relate parse of edited rule to previous
   update active choices
     (if rule modified, reset to beginning)
-
-interesting query
-
-custom state viz
-  tuple -> element map
-
-binding picker for each quantifier type
-  todo soon: up to
 
 */
