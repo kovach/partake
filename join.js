@@ -172,7 +172,7 @@ function extendBinding(c, tag, tuple, names) {
     let term = names[index];
     if (isLiteral(term) && term !== tuple[index]) {
       return false;
-    } else if (term in c.bindings && c.bindings[term] !== tuple[index])
+    } else if (term in c.bindings && !valEqual(c.bindings[term], tuple[index]))
       return false;
   }
   c = structuredClone(c);

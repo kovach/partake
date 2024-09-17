@@ -3,7 +3,7 @@
 main -> line {% id %}
 
 # var, Var
-var -> [a-zA-Z] [a-zA-Z0-9']:*  {% (d) => d[0] + d[1].join("") %}
+var -> [a-zA-Z_] [a-zA-Z0-9'_]:*  {% (d) => d[0] + d[1].join("") %}
 # a2bc'
 predicate -> [a-z] [a-zA-Z0-9']:* {% (d) => d[0] + d[1].join("") %}
 
@@ -37,6 +37,13 @@ operation -> var _ "=" _ "count" _ "(" _ pureQuery _ ")"
     ];
   } %}
 operation -> literal _ "<" _ literal
+  {% (d) => {
+    return[
+        {tag: 'binOp', operator: d[2], l: d[0], r: d[4]}
+    ];
+  } %}
+
+operation -> literal _ "=" _ literal
   {% (d) => {
     return[
         {tag: 'binOp', operator: d[2], l: d[0], r: d[4]}

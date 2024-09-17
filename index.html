@@ -17,6 +17,7 @@
       #rule {
         font-family: "Courier New", Courier, monospace;
         font-size: 12pt;
+        white-space: pre-line;
       }
       .row {
         display: flex;
@@ -29,11 +30,13 @@
         background-color: #e2f2ff;
         margin: 2px;
         padding: 10px;
+        min-width: 150px;
       }
       #right {
         background-color: #ffede5;
         margin: 2px;
         padding: 10px;
+        min-width: 150px;
       }
     </style>
   </head>
@@ -43,9 +46,9 @@
         <div id="left"></div>
         <div id="right"></div>
       </div>
-      <div class="row" id="rule">
+      <pre class="row" id="rule">
         <div></div>
-      </div>
+      </pre>
     </div>
     <script type="importmap">
       {

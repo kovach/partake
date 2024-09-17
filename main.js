@@ -203,16 +203,14 @@ function stepOperation(db, contexts, operation) {
       }
       break;
     case "binOp":
-      switch (operation.operator) {
-        case "<":
-          for (let context of contexts) {
-            let l = evalLiteral(operation.l, context.binding);
-            let r = evalLiteral(operation.r, context.binding);
-            if (l < r) result.push(context);
-          }
-          break;
-        default:
-          throw "unimplemented";
+      let fn;
+      if (operation.operator === "<") fn = (a, b) => a < b;
+      else if (operation.operator === "=") fn = (a, b) => a === b;
+      else throw "unimplemented operator";
+      for (let context of contexts) {
+        let l = evalLiteral(operation.l, context.binding);
+        let r = evalLiteral(operation.r, context.binding);
+        if (fn(l, r)) result.push(context);
       }
 
       break;
@@ -251,6 +249,8 @@ function fixStack(db, rules, trace, stack) {
           let op = operations[0];
           operations = operations.slice(1);
           if (op.tag === "takeChoice") {
+            // todo: other quantifiers
+            contexts = contexts.filter((c) => c.binding._choices.length > 0);
             trace.push({
               tag: "choice",
               type: "one",
@@ -413,11 +413,13 @@ function checkChoiceState(state) {
 }
 
 let parseGuard = (x) => parseQuery(x)[0];
-let db;
+let db = emptyDb();
+let initTuples = `
+land l1, land l2, land l3,
+adjacent l1 l2, adjacent l2 l3, adjacent l3 l2, adjacent l2 l1,
+`;
 function resetDb() {
   db = dbOfList([
-    ["zero", [0]],
-    ["one", [1]],
     ["land", [0]],
     ["land", [1]],
     ["land", [2]],
@@ -440,18 +442,23 @@ function mkRule(name, guard, ruleText) {
 
 console.log("hm", isLiteral(["sym", 0]));
 let rule1 = mkRule("moves", "in t l", "after(moved t)");
+let oldrule =
+  "land x, in t x, choose [exactly 1] (adjacent x y), before (in t x), after (in t y)";
 let rules = [
-  mkRule(
-    "move-token",
-    "moved t",
-    "land x, in t x, choose [exactly 1] (adjacent x y), before (in t x), after (in t y, moved t)"
-  ),
+  mkRule("turn1", "init", "after (turn a)"),
+  mkRule("make-tokens", "init", "after (token x, token y)"),
+  mkRule("init", "init", `after (${initTuples})`),
+  mkRule("next-turn", "turn a", "after (turn b)"),
   mkRule(
     "place-token",
     "token t",
-    "choose [exactly 1] (land loc), after (in t loc, moved t)"
+    "choose [exactly 1] (land loc), \n after (in t loc)"
   ),
-  //mkRule("make-cells", "init", "row a, column b, after (cell a b)"),
+  mkRule(
+    "turn-move",
+    "turn _",
+    "land x, choose [exactly 1] (in t x, adjacent x y), before (in t x), after (in t y)"
+  ),
 ];
 
 function mkTrace() {
@@ -472,7 +479,7 @@ window.onload = () => {
   let line2_ =
     "land x, c = count (token t, in t x), one c, choose [exactly 1] (token t, in t x, adjacent x y), before (in t x), after (in t y)";
 
-  resetDb();
+  //resetDb();
   let trace = mkTrace();
   trace.push({ tag: "record", db: clone(db), name: "init", ruleText: "" });
   function go(ruleText) {
@@ -481,14 +488,24 @@ window.onload = () => {
       mkLine({ name: "repl", ruleText, contexts, operations }),
     ]);
   }
-  go("after (token a, token b)");
-  //go(line2_);
-  //go("land x, land y, land z, after (foo x y z)");
+  go(`after(init)`);
 };
 
 /* plan
 
-default actions (handle no choice)
+rule stepper
+default actions (handle unique choice)
+highlight choices
+rule editor on screen
+  reload rules
+  undo to point on trace
+
+
+**later**
+parse diffs
+  relate parse of edited rule to previous
+  update active choices
+    (if rule modified, reset to beginning)
 
 interesting query
 
