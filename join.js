@@ -160,54 +160,80 @@ function printDb(db) {
 /* end variables */
 
 function isLiteral(term) {
-  if (Array.isArray(term) && term.length === 2 && term[0] === "sym")
-    return term;
-  if (Number.isInteger(term)) return term;
-  return null;
+  assert(term.tag !== undefined);
+  return term.tag !== "var";
+}
+
+function isVar(term) {
+  assert(term.tag !== undefined);
+  return term.tag === "var";
+}
+
+function evalTerm(js, binding, term) {
+  if (isLiteral(term)) {
+    if (term.tag === "call") {
+      let args = term.args.map((v) => evalTerm(js, binding, v));
+      return js[term.fn](...args);
+    } else {
+      assert(term.tag === "int" || term.tag === "sym");
+      return term;
+    }
+  }
+  if (term.value in binding) return binding[term.value];
+  throw "var missing from binding";
 }
 
 // todo profile
-function extendBinding(c, tag, tuple, names) {
-  for (let index = 0; index < names.length; index++) {
-    let term = names[index];
-    if (isLiteral(term) && term !== tuple[index]) {
+function extendBinding(js, c, tag, tuple, terms) {
+  //if (tag === "in") throw "";
+  for (let index = 0; index < terms.length; index++) {
+    let term = terms[index];
+    if (isLiteral(term)) {
+      let val = evalTerm(js, binding, term);
+      if (!valEqual(val, tuple[index])) return false;
+    } else if (
+      term.value in c.binding &&
+      !valEqual(c.binding[term.value], tuple[index])
+    ) {
       return false;
-    } else if (term in c.bindings && !valEqual(c.bindings[term], tuple[index]))
-      return false;
+    }
   }
   c = structuredClone(c);
-  for (let index = 0; index < names.length; index++) {
-    let term = names[index];
+  for (let index = 0; index < terms.length; index++) {
+    let term = terms[index];
     if (isLiteral(term)) continue;
-    c.bindings[term] = tuple[index];
+    c.binding[term.value] = tuple[index];
   }
   c.used.push([tag, tuple]);
   return c;
 }
-function* joinBindings(cs, { tag, tuples, names }) {
+function* joinBindings(js, cs, { tag, tuples, terms }) {
   for (let c of cs) {
     for (let tuple of tuples) {
-      let c_ = extendBinding(c, tag, tuple, names);
+      let c_ = extendBinding(js, c, tag, tuple, terms);
       if (c_ !== false) yield c_;
     }
   }
 }
 
-function evalQuery(db, query, context = [{ bindings: {}, used: [] }]) {
+function evalQuery(db, js, query, context = [{ binding: {}, used: [] }]) {
   return query
-    .map(([tag, names]) => ({ tag, names, tuples: iterRelTuples(db, tag) }))
-    .reduce(joinBindings, context);
+    .map((pattern) => {
+      assert(Array.isArray(pattern) && pattern.length === 2);
+      let [tag, terms] = pattern;
+      return { tag, terms, tuples: iterRelTuples(db, tag) };
+    })
+    .reduce((a, b) => joinBindings(js, a, b), context);
 }
 
 function valEqual(a, b) {
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length === b.length) {
-      for (let i = 0; i < a.length; i++)
-        if (!valEqual(a[i], b[i])) return false;
-      return true;
-    } else return false;
+  if (a.tag !== b.tag) return false;
+  assert(a.tag !== "var" && a.tag !== "call");
+  switch (a.tag) {
+    case "sym":
+    case "int":
+      return a.value === b.value;
   }
-  return a === b;
 }
 
 function joinTuples(t, s) {
@@ -267,25 +293,8 @@ function* selectPattern(db, p) {
   }
 }
 
-function* selectTuples(db, p) {
-  for (let t of iterRelTuples(db, p[0])) {
-    let vals = rename(t, p[1]);
-    if (vals !== false) yield vals;
-  }
-}
-
-function* selectTuplesWithSource(db, p) {
-  for (let t of iterRelTuples(db, p[0])) {
-    let vals = rename(t, p[1]);
-    if (vals !== false) yield [[p[0], t], vals];
-  }
-}
-
-const joins = (db, ps, init = [{}, 1]) =>
-  ps.map((p) => selectPattern(db, p)).reduce(join, [init]);
 const joinsWeighted = (db, ps, init = [{}, 1]) =>
   ps.map((p) => selectPattern(db, p)).reduce(join, [init]);
-const joinsCollect = (db, ps) => Array.from(joinsWeighted(db, ps));
 
 /* section:parser */
 // todo: use parser generator?
@@ -330,19 +339,23 @@ const pp_parse = (x) => ppQuery(parseQuery(x));
 
 let globalIdCounter = 0;
 function freshId() {
-  return ["sym", globalIdCounter++];
+  return { tag: "sym", value: globalIdCounter++ };
 }
 
-function unrename(tuple, atoms) {
+function unrename(js, tuple, terms) {
   let result = [];
-  atoms.forEach((term) => {
-    let val = isLiteral(term);
-    if (val !== null) result.push(term);
-    else if (term in tuple) result.push(tuple[term]);
+  terms.forEach((term) => {
+    if (isLiteral(term)) result.push(evalTerm(js, tuple, term));
     else {
-      let id = freshId();
-      tuple[term] = id;
-      result.push(id);
+      assert(isVar(term));
+      //console.log("!!!!!!", term, tuple);
+      let v = term.value;
+      if (v in tuple) result.push(tuple[v]);
+      else {
+        let id = freshId();
+        tuple[v] = id;
+        result.push(id);
+      }
     }
   });
   return result;
@@ -361,12 +374,6 @@ function parseRule(str) {
   let [query, output] = str.split("->").map(parseQuery);
   return { query, output };
 }
-
-// assert
-try {
-  assert(false, "expected error");
-  alert("assert should have failed!");
-} catch (e) {}
 
 function specialRelationHandlerUndo(tag, args) {
   let msg = (name, expected) =>
@@ -573,14 +580,8 @@ const node = {
 
 export {
   unrename,
-  rename,
-  joinsWeighted,
-  joins,
-  joinTuples,
-  selectTuples,
   dbOfList,
   parseQuery,
-  selectTuplesWithSource,
   dbAddTuple,
   af,
   str,
@@ -590,4 +591,5 @@ export {
   evalQuery,
   isLiteral,
   valEqual,
+  extendBinding,
 };

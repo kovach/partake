@@ -1,11 +1,6 @@
 import {
-  parseQuery,
   unrename,
-  joins,
-  joinTuples,
   dbOfList,
-  selectTuples,
-  selectTuplesWithSource,
   dbAddTuple,
   af,
   str,
@@ -13,11 +8,10 @@ import {
   emptyDb,
   dbContains,
   evalQuery,
-  isLiteral,
-  valEqual,
 } from "./join.js";
 
 import * as d from "./dom.js";
+import { s } from "./dom.js";
 
 import grammar from "./grammar.js";
 
@@ -75,11 +69,10 @@ function parseNonterminal(nt, text) {
   return null;
 }
 
-//console.log(JSON.stringify(parse("foo X Y, baz z, bar")));
+//console.log(JSON.stringify(parseNonterminal("literal", "foo(x, y)")));
 //console.log(JSON.stringify(parse("bar, after (foo X, bar Y)")));
 //console.log(JSON.stringify(parse("bar, before (x), after (foo X, bar Y)")));
 
-// Stack Object related constructors
 function mkNewTuples(value) {
   return {
     tag: "newTuples",
@@ -108,8 +101,12 @@ function bindingDiff(b1, b2) {
 function matchRule(rule, tuples) {
   let { name, guard, body } = rule;
   let db = dbOfList(tuples);
-  let bindings = af(selectTuples(db, guard));
-  return { name, contexts: bindings.map(mkContext), lines: body };
+  let bindings = af(evalQuery(db, js, [guard]));
+  return {
+    name,
+    contexts: bindings.map(({ binding }) => mkContext(binding)),
+    lines: body,
+  };
 }
 function matchRules(rules, tuples) {
   let result = [];
@@ -126,54 +123,47 @@ function matchRules(rules, tuples) {
   return result;
 }
 
-function makeTuple(binding, pattern) {
+function makeTuple(js, binding, pattern) {
   let [tag, atoms] = pattern;
-  return [tag, unrename(binding, atoms)];
+  return [tag, unrename(js, binding, atoms)];
 }
 
-function evalLiteral(term, binding) {
-  let val = isLiteral(term);
-  if (val !== null) return val;
-  if (term in binding) return binding[term];
-  throw "var missing from binding";
-}
-
-function stepOperation(db, contexts, operation) {
-  // TODO: switch to joinBindings
-  function* iter(cs, fn) {
-    for (let c of cs) {
-      for (let [t, vals] of selectTuplesWithSource(db, operation.pattern)) {
-        let v = fn(c, vals, t);
+function stepOperation(db, js, contexts, operation) {
+  function* iter_(cs, fn) {
+    for (let base of cs) {
+      // todo: thread del/add through evalQuery
+      for (let binding of evalQuery(
+        db,
+        js,
+        [operation.pattern],
+        [{ binding: base.binding, used: [] }]
+      )) {
+        let v = fn(binding, base);
         if (v) yield v;
       }
     }
   }
-  function doRel(c, vals) {
-    let binding = joinTuples(c.binding, vals);
-    if (binding) {
-      return { binding, del: c.del, add: c.add };
-    }
-  }
-  function doBeforeRel(c, vals, t) {
-    let binding = joinTuples(c.binding, vals);
-    if (binding) {
-      return { binding, del: c.del.concat([t]), add: c.add };
-    }
-  }
+  let doRel = ({ binding }, { del, add }) => ({ binding, del, add });
+  let doBeforeRel = ({ binding, used }, { del, add }) => ({
+    binding,
+    del: del.concat([used[0]]),
+    add,
+  });
+
   let result = [];
   switch (operation.tag) {
     case "rel":
-      for (let c of iter(contexts, doRel)) result.push(c);
+      for (let c of iter_(contexts, doRel)) result.push(c);
       break;
     case "before":
-      for (let c of iter(contexts, doBeforeRel)) result.push(c);
+      for (let c of iter_(contexts, doBeforeRel)) result.push(c);
       break;
     case "after":
       for (let { binding, del, add } of contexts) {
         result.push({
           binding,
           del,
-          add: add.concat([makeTuple(binding, operation.pattern)]),
+          add: add.concat([makeTuple(js, binding, operation.pattern)]),
         });
       }
       break;
@@ -183,7 +173,7 @@ function stepOperation(db, contexts, operation) {
       for (let c of contexts) {
         let { name, body } = operation;
         let choices = af(
-          evalQuery(db, body, [{ bindings: c.binding, used: [] }])
+          evalQuery(db, js, body, [{ binding: c.binding, used: [] }])
         );
         if (operation.tag === "subQuery") c.binding[name] = choices;
         else if (operation.tag === "countQuery")
@@ -208,8 +198,8 @@ function stepOperation(db, contexts, operation) {
       else if (operation.operator === "=") fn = (a, b) => a === b;
       else throw "unimplemented operator";
       for (let context of contexts) {
-        let l = evalLiteral(operation.l, context.binding);
-        let r = evalLiteral(operation.r, context.binding);
+        let l = evalTerm(js, context.binding, operation.l);
+        let r = evalTerm(js, context.binding, operation.r);
         if (fn(l, r)) result.push(context);
       }
 
@@ -232,7 +222,7 @@ function unionContexts(contexts) {
 }
 
 let stepLimit = 200;
-function fixStack(db, rules, trace, stack) {
+function fixStack(db, rules, js, trace, stack) {
   let count = 0;
   loop: while (stack.length > 0 && count++ < stepLimit) {
     let obj = stack.pop();
@@ -268,7 +258,7 @@ function fixStack(db, rules, trace, stack) {
           } else {
             stack.push(
               mkLine({
-                contexts: stepOperation(db, contexts, op),
+                contexts: stepOperation(db, js, contexts, op),
                 operations,
                 ruleText,
                 name,
@@ -282,7 +272,6 @@ function fixStack(db, rules, trace, stack) {
           for (let [tag, tuple] of del) dbAddTuple(db, tag, tuple, -1);
           for (let [tag, tuple] of add) dbAddTuple(db, tag, tuple, +1);
           if (add.length > 0) stack.push(mkNewTuples(add));
-          //renderDb(db);
           trace.push({ tag: "record", db: clone(db), name, ruleText });
         }
         break;
@@ -292,24 +281,44 @@ function fixStack(db, rules, trace, stack) {
   }
 }
 
-let app;
-let valRefs;
-let tupleRefs;
+// todo
+function removeTuple(db, tag, tuple) {
+  dbAddTuple(db, tag, tuple, -1);
+  for (let e of watchLists.get()) {
+  }
+}
+
+function ppTerm(term) {
+  switch (term.tag) {
+    case "sym":
+      return `'${term.value}`;
+    case "int":
+      return `${term.value}`;
+  }
+  throw "unreachable";
+}
+
 function ppTuple(tag, tuple) {
-  tuple = tuple.map((term) => {
-    if (Array.isArray(term) && term.length === 2 && term[0] === "sym")
-      return `'${term[1]}`;
-    else return term;
-  });
+  tuple = tuple.map(ppTerm);
   let tupleText = tuple.join(" ");
   return `(${tag}${tupleText.length > 0 ? " " + tupleText : ""})`;
 }
+function ppBinding(binding) {
+  let pairs = [];
+  for (let key in binding) {
+    if (key[0] !== "_") pairs.push(`${key}: ${ppTerm(binding[key])}`);
+  }
+  return `{${pairs.join(", ")}}`;
+}
+
+let app;
+let valRefs;
+let tupleRefs;
 function renderDb(db, previous) {
   if (app) d.remove(app);
   valRefs = new ArrayMap();
   tupleRefs = new ArrayMap();
   app = d.createChildId("div", "left");
-  //app.style.fontSize = "16pt";
   for (let [tag, rel] of db.entries()) {
     for (let [value, _] of rel.values()) {
       //console.log(`(${tag} ${value.join(" ")})`);
@@ -317,9 +326,7 @@ function renderDb(db, previous) {
       e.innerHTML = ppTuple(tag, value);
       if (previous) {
         if (!dbContains(previous, tag, value)) {
-          e.style["background-color"] = "#a000b5";
-          e.style["color"] = "#ffffff";
-          //e.style["font-weight"] = "bold";
+          e.classList.add("hl");
         }
       }
       for (let v of value) valRefs.add(v, e);
@@ -357,7 +364,6 @@ function renderTraceEntry(entry) {
       break;
   }
 }
-function ppBinding(binding) {}
 function renderContextChoices(c) {
   let state = globalChoiceState.states.get(c).chosen;
   let e = d.createChildId("div", "right");
@@ -367,10 +373,11 @@ function renderContextChoices(c) {
   });
   globalChoiceState.elements.push(e);
 }
-function renderChoice(chosen, parent, { bindings: binding, used }) {
+function renderChoice(chosen, parent, { binding, used }) {
   let e = d.createChild("div", parent);
-  e.innerHTML = `    ${JSON.stringify(binding)}`;
+  e.innerHTML = `    ${ppBinding(binding)}`;
   e.onmouseleave = () => {
+    e.classList.remove("hl");
     for (let e of d.allChildren(d.getId("left"))) {
       e.classList.remove("hl");
     }
@@ -381,10 +388,16 @@ function renderChoice(chosen, parent, { bindings: binding, used }) {
         elem.classList.add("hl");
       }
     }
+    e.classList.add("hl");
   };
   e.onclick = () => {
-    if (chosen.has(binding)) chosen.delete(binding);
-    else chosen.add(binding);
+    if (chosen.has(binding)) {
+      chosen.delete(binding);
+      e.classList.remove("selection");
+    } else {
+      chosen.add(binding);
+      e.classList.add("selection");
+    }
     checkGlobalChoiceState();
   };
 }
@@ -401,7 +414,7 @@ function checkGlobalChoiceState() {
   }
   operations = [{ tag: "applyChoices" }].concat(operations);
   stack.push(mkLine({ contexts, operations, ruleText, name }));
-  fixStack(db, rules, trace, stack);
+  fixStack(db, rules, js, trace, stack);
 }
 function checkChoiceState(state) {
   switch (globalChoiceState.entry.type) {
@@ -412,25 +425,13 @@ function checkChoiceState(state) {
   }
 }
 
-let parseGuard = (x) => parseQuery(x)[0];
 let db = emptyDb();
 let initTuples = `
 land l1, land l2, land l3,
 adjacent l1 l2, adjacent l2 l3, adjacent l3 l2, adjacent l2 l1,
 `;
-function resetDb() {
-  db = dbOfList([
-    ["land", [0]],
-    ["land", [1]],
-    ["land", [2]],
-    ["adjacent", [0, 1]],
-    ["adjacent", [1, 2]],
-    ["adjacent", [2, 1]],
-    ["adjacent", [1, 0]],
-    //["token", ["t"]],
-  ]);
-}
 
+// todo: parse
 function mkRule(name, guard, ruleText) {
   return {
     guard: parseNonterminal("relation", guard),
@@ -440,15 +441,14 @@ function mkRule(name, guard, ruleText) {
   };
 }
 
-console.log("hm", isLiteral(["sym", 0]));
 let rule1 = mkRule("moves", "in t l", "after(moved t)");
 let oldrule =
   "land x, in t x, choose [exactly 1] (adjacent x y), before (in t x), after (in t y)";
 let rules = [
-  mkRule("turn1", "init", "after (turn a)"),
-  mkRule("make-tokens", "init", "after (token x, token y)"),
+  mkRule("turn1", "init", "after (turn 1)"),
+  mkRule("make-tokens", "init", "after (token x)"),
   mkRule("init", "init", `after (${initTuples})`),
-  mkRule("next-turn", "turn a", "after (turn b)"),
+  mkRule("next-turn", "turn a", "after (turn incr(a))"),
   mkRule(
     "place-token",
     "token t",
@@ -471,6 +471,18 @@ function mkTrace() {
   return trace;
 }
 
+function mkInt(value) {
+  return { tag: "int", value };
+}
+
+// todo, not global?
+let js = {
+  incr: (x) => {
+    // todo: annoying
+    return mkInt(x.value + 1);
+  },
+};
+
 window.onload = () => {
   let contexts = [mkContext({})];
   let line1 = "land x, token t, before (in t x), adjacent x y, after (in t y)";
@@ -479,12 +491,10 @@ window.onload = () => {
   let line2_ =
     "land x, c = count (token t, in t x), one c, choose [exactly 1] (token t, in t x, adjacent x y), before (in t x), after (in t y)";
 
-  //resetDb();
   let trace = mkTrace();
-  trace.push({ tag: "record", db: clone(db), name: "init", ruleText: "" });
   function go(ruleText) {
     let operations = parse(ruleText);
-    return fixStack(db, rules, trace, [
+    return fixStack(db, rules, js, trace, [
       mkLine({ name: "repl", ruleText, contexts, operations }),
     ]);
   }
@@ -508,7 +518,7 @@ declarative ui
       container-at l1 x y
       container-at l2 x y
 
-end-to-end with graphics!!
+end-to-end with graphics!
   display board, cards, tokens, hands, decks, growth-track
   choose growth
   choose cards, pay
@@ -525,7 +535,6 @@ end-to-end with graphics!!
       push, gather, damage, energy, presence, range
 
 choose any
-remove second join implementation
 
 easy
   turn db into class
@@ -533,6 +542,7 @@ easy
   parse rules
   parse multi-line rules
 
+value/dynamic breakpoint?
 schemas?
 attach stack/rule data to each trace entry
   call renderDb on choice mouseover

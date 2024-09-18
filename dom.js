@@ -11,7 +11,7 @@ function create(type) {
   return e;
 }
 function remove(child) {
-  assert(child !== null, `${child}, ${parent}`);
+  assert(child !== null, "remove");
   let maybeParent = child.parentNode;
   if (maybeParent) maybeParent.removeChild(child);
 }
@@ -40,7 +40,26 @@ function* allChildren(node) {
   }
 }
 
+class SVGHelp {
+  create(type) {
+    return document.createElementNS("http://www.w3.org/2000/svg", type);
+  }
+  createChild(type, parent) {
+    return childParent(this.create(type), parent);
+  }
+  createChildId(type, id) {
+    return createChild(type, getId(id));
+  }
+  createElement(tag, id) {
+    let e = this.create(tag);
+    e.id = id;
+    return e;
+  }
+}
+let s = new SVGHelp();
+
 export {
+  s,
   getId,
   create,
   remove,

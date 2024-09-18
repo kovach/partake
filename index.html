@@ -6,9 +6,11 @@
     <title>join thing</title>
     <style>
       .hl {
-        /* border-radius: 8;
-        border: solid; */
-        background-color: #ffff00;
+        background-color: #a000b5;
+        color: #ffffff;
+      }
+      .selection {
+        outline: 2px solid #eaa400;
       }
       #container {
         display: flex;
@@ -38,6 +40,11 @@
         padding: 10px;
         min-width: 150px;
       }
+      .svg {
+        width: 200px;
+        min-height: 200px;
+        height: 200px;
+      }
     </style>
   </head>
   <body id="body">
@@ -48,6 +55,9 @@
       </div>
       <pre class="row" id="rule">
         <div></div>
+      </pre>
+      <pre class="row" id="svg">
+        <svg></svg>
       </pre>
     </div>
     <script type="importmap">
