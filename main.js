@@ -10,40 +10,12 @@ import {
   evalQuery,
 } from "./join.js";
 
+import { ArrayMap } from "./collections.js";
+
 import * as d from "./dom.js";
 import { s } from "./dom.js";
 
 import grammar from "./grammar.js";
-
-class MonoidMap {
-  constructor(zero, plus) {
-    this.map = new Map();
-    this.zero = zero;
-    this.plus = plus;
-  }
-  get(key) {
-    let v = this.map.get(key);
-    if (v === undefined) {
-      v = this.zero();
-      this.map.set(key, v);
-    }
-    return v;
-  }
-  add(key, value) {
-    let v = this.get(key);
-    this.plus(v, value);
-    return v;
-  }
-}
-
-class ArrayMap extends MonoidMap {
-  constructor() {
-    super(
-      () => [],
-      (a, b) => a.push(b)
-    );
-  }
-}
 
 let debugSteps = false;
 let debugResult = false;
