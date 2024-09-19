@@ -1,3 +1,7 @@
+function assert(cond, msg) {
+  if (!cond) throw new Error(msg);
+}
+
 class MonoidMap {
   constructor(zero, plus) {
     this.map = new Map();
@@ -28,4 +32,4 @@ class ArrayMap extends MonoidMap {
   }
 }
 
-export { MonoidMap, ArrayMap };
+export { assert, MonoidMap, ArrayMap };

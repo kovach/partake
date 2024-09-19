@@ -48,11 +48,32 @@ class SVGHelp {
     return childParent(this.create(type), parent);
   }
   createChildId(type, id) {
-    return createChild(type, getId(id));
+    return this.createChild(type, getId(id));
   }
   createElement(tag, id) {
     let e = this.create(tag);
     e.id = id;
+    return e;
+  }
+  set(e, key, val) {
+    return e.setAttribute(key, val);
+  }
+  mkRectangle(x, y, width = 100, height = 100) {
+    let e = s.createChildId("rect", "svg");
+    s.set(e, "width", width);
+    s.set(e, "height", height);
+    s.set(e, "x", x);
+    s.set(e, "y", y);
+    s.set(e, "fill", "#ffeeaa");
+    return e;
+  }
+
+  mkCircle() {
+    let e = s.createChildId("circle", "svg");
+    s.set(e, "r", "30");
+    s.set(e, "cx", "30");
+    s.set(e, "cy", "30");
+    s.set(e, "fill", "#ffeeaa");
     return e;
   }
 }

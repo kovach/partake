@@ -8,9 +8,10 @@ import {
   emptyDb,
   dbContains,
   evalQuery,
+  evalTerm,
 } from "./join.js";
 
-import { ArrayMap } from "./collections.js";
+import { assert, ArrayMap } from "./collections.js";
 
 import * as d from "./dom.js";
 import { s } from "./dom.js";
@@ -23,23 +24,21 @@ let debugIterTag = true;
 
 // Create a Parser object from our grammar.
 
-function parse(str) {
-  let parser = new nearley.Parser(grammar);
-  //let parser = new nearley.Parser(nearley.Grammar.fromCompiled(grammar));
-  parser.feed(str);
-  let result = parser.results;
-  if (result.length > 0) return result[0];
-  return null;
-}
+// let parser = new nearley.Parser(nearley.Grammar.fromCompiled(grammar), {
+//   keepHistory: true,
+// });
 function parseNonterminal(nt, text) {
   let g = nearley.Grammar.fromCompiled(grammar);
   g.start = nt;
   let parser = new nearley.Parser(g);
   parser.feed(text);
   let result = parser.results;
-  if (result.length > 0) return result[0];
-  return null;
+  assert(result.length > 0);
+  return result[0];
 }
+let parseLine = (str) => parseNonterminal("line", str);
+let parse = (str) => parseNonterminal("rule", str);
+let parseRules = (str) => parseNonterminal("program", str);
 
 //console.log(JSON.stringify(parseNonterminal("literal", "foo(x, y)")));
 //console.log(JSON.stringify(parse("bar, after (foo X, bar Y)")));
@@ -57,23 +56,26 @@ function mkLine(value) {
     value,
   };
 }
+
+function mkTrace() {
+  let trace = { entries: [] };
+  trace.push = (entry) => {
+    renderDb(db);
+    renderTraceEntry(entry);
+    trace.entries.push(entry);
+  };
+  return trace;
+}
+
 // Operation related constructors
 function mkContext(binding) {
   return { binding, del: [], add: [] };
 }
-function bindingDiff(b1, b2) {
-  let result = {};
-  for (let key in b2) {
-    if (!(key in b1)) {
-      result[key] = b2[key];
-    }
-  }
-  return result;
-}
+
 function matchRule(rule, tuples) {
   let { name, guard, body } = rule;
   let db = dbOfList(tuples);
-  let bindings = af(evalQuery(db, js, [guard]));
+  let bindings = af(evalQuery(db, js, guard));
   return {
     name,
     contexts: bindings.map(({ binding }) => mkContext(binding)),
@@ -154,8 +156,6 @@ function stepOperation(db, js, contexts, operation) {
         result.push(c);
       }
       break;
-    case "takeChoice":
-      throw "unreachable: `takeChoice` is handled by fixStack";
     case "applyChoices":
       for (let { binding, del, add } of contexts) {
         for (let b of binding._choices) {
@@ -176,6 +176,15 @@ function stepOperation(db, js, contexts, operation) {
       }
 
       break;
+    case "call":
+      for (let c of contexts) {
+        evalTerm(js, c.binding, operation.value);
+        result.push(c);
+      }
+
+      break;
+    case "takeChoice":
+      throw "unreachable: `takeChoice` is handled by fixStack";
     default:
       throw ["undefined tag stepOperation", operation];
   }
@@ -254,11 +263,13 @@ function fixStack(db, rules, js, trace, stack) {
 }
 
 // todo
-function removeTuple(db, tag, tuple) {
-  dbAddTuple(db, tag, tuple, -1);
-  for (let e of watchLists.get()) {
-  }
-}
+//let elementWatchLists = new ArrayMap();
+//function removeTuple(db, tag, tuple) {
+//  dbAddTuple(db, tag, tuple, -1);
+//  for (let e of elementWatchLists.get(key([tag, tuple]))) {
+//    d.remove(e);
+//  }
+//}
 
 function ppTerm(term) {
   switch (term.tag) {
@@ -398,74 +409,69 @@ function checkChoiceState(state) {
 }
 
 let db = emptyDb();
-let initTuples = `
-land l1, land l2, land l3,
-adjacent l1 l2, adjacent l2 l3, adjacent l3 l2, adjacent l2 l1,
-`;
 
-// todo: parse
 function mkRule(name, guard, ruleText) {
   return {
-    guard: parseNonterminal("relation", guard),
-    body: [parse(ruleText)],
+    guard: [parseNonterminal("relation", guard)],
+    body: [parseLine(ruleText)],
     name,
     ruleText: `(${guard}): ${ruleText}`,
   };
 }
 
-let rule1 = mkRule("moves", "in t l", "after(moved t)");
-let oldrule =
-  "land x, in t x, choose [exactly 1] (adjacent x y), before (in t x), after (in t y)";
-let rules = [
-  mkRule("turn1", "init", "after (turn 1)"),
-  mkRule("make-tokens", "init", "after (token x)"),
-  mkRule("init", "init", `after (${initTuples})`),
-  mkRule("next-turn", "turn a", "after (turn incr(a))"),
-  mkRule(
-    "place-token",
-    "token t",
-    "choose [exactly 1] (land loc), \n after (in t loc)"
-  ),
-  mkRule(
-    "turn-move",
-    "turn _",
-    "land x, choose [exactly 1] (in t x, adjacent x y), before (in t x), after (in t y)"
-  ),
-];
+let ruleText = `
+(init): after (turn 1).
+(init): after (token _).
 
-function mkTrace() {
-  let trace = { entries: [] };
-  trace.push = (entry) => {
-    renderDb(db);
-    renderTraceEntry(entry);
-    trace.entries.push(entry);
-  };
-  return trace;
-}
+initial-facts (init): after (
+  land l1, land l2, land l3,
+  adjacent l1 l2, adjacent l2 l3, adjacent l3 l2, adjacent l2 l1,
+
+  position l1 1 1,
+  position l2 1 2,
+  position l3 1 3
+  ).
+
+next-turn
+(turn a): after (turn !incr(a)).
+
+place-token
+(token t): choose [exactly 1] (land loc), after (in t loc).
+
+turn-move
+(turn _):
+  land x, choose [exactly 1] (in t x, adjacent x y),
+  before (in t x), after (in t y).
+
+render-land (position l r c): !mkLand(l, r, c).
+`;
+let rules = parseRules(ruleText);
+
+console.log("rules: ", rules);
 
 function mkInt(value) {
   return { tag: "int", value };
 }
-
-// todo, not global?
+// todo: not global?
 let js = {
   incr: (x) => {
     // todo: annoying
     return mkInt(x.value + 1);
   },
+  mkLand: (id, row, column) => {
+    let w = 100;
+    let e = s.mkRectangle(column.value * (w + 10), row.value * (w + 10), w, w);
+    e.setAttribute("my-id", ppTerm(id));
+  },
 };
 
 window.onload = () => {
   let contexts = [mkContext({})];
-  let line1 = "land x, token t, before (in t x), adjacent x y, after (in t y)";
-  let line2 =
-    "land x, token t, before (in t x), choose [exactly 1] (adjacent x y), after (in t y)";
-  let line2_ =
-    "land x, c = count (token t, in t x), one c, choose [exactly 1] (token t, in t x, adjacent x y), before (in t x), after (in t y)";
 
   let trace = mkTrace();
+
   function go(ruleText) {
-    let operations = parse(ruleText);
+    let operations = parseLine(ruleText);
     return fixStack(db, rules, js, trace, [
       mkLine({ name: "repl", ruleText, contexts, operations }),
     ]);
@@ -475,20 +481,12 @@ window.onload = () => {
 
 /* plan
 
+semicolon
+before/after in subquery?
+
 declarative ui
-  these are not rules, they're hooks called when handling before/after
-    they render state declaratively, not events
-  for now, implement with rules and js function calls
-  create element dependent on tuple, store in lists
-    token t
-      lets try SVG
-  remove elements during deletion
   land l, token t, in t l
     just handle with parents
-  adjacent l1 l2
-    just coordinates for now
-      container-at l1 x y
-      container-at l2 x y
 
 end-to-end with graphics!
   display board, cards, tokens, hands, decks, growth-track

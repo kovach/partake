@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>join thing</title>
     <style>
+      body {
+        height: 100%;
+      }
       .hl {
         background-color: #a000b5;
         color: #ffffff;
@@ -15,6 +18,7 @@
       #container {
         display: flex;
         flex-direction: column;
+        height: 100%;
       }
       #rule {
         font-family: "Courier New", Courier, monospace;
@@ -40,10 +44,15 @@
         padding: 10px;
         min-width: 150px;
       }
-      .svg {
+      .svg-row {
         width: 200px;
         min-height: 200px;
         height: 200px;
+      }
+      svg {
+        width: 1280px;
+        height: 720px;
+        outline: 1px solid black;
       }
     </style>
   </head>
@@ -56,8 +65,8 @@
       <pre class="row" id="rule">
         <div></div>
       </pre>
-      <pre class="row" id="svg">
-        <svg></svg>
+      <pre class="row" id="svg-row">
+        <svg id="svg"></svg>
       </pre>
     </div>
     <script type="importmap">

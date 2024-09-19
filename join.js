@@ -592,4 +592,5 @@ export {
   isLiteral,
   valEqual,
   extendBinding,
+  evalTerm,
 };
