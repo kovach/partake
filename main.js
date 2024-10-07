@@ -24,6 +24,14 @@ let debugSteps = false;
 let debugResult = false;
 let debugIterTag = true;
 
+let ap = Symbol("partial-apply");
+Function.prototype[ap] = function (e) {
+  return (...args) => this.apply(this, [e].concat(args));
+};
+function toTag(f) {
+  return ([str]) => f(str);
+}
+
 // Create a Parser object from our grammar.
 
 // let parser = new nearley.Parser(nearley.Grammar.fromCompiled(grammar), {
@@ -59,7 +67,7 @@ function mkLine(value) {
   };
 }
 
-function mkTrace() {
+function mkTrace(db) {
   let trace = { entries: [] };
   trace.push = (entry) => {
     renderDb(db);
@@ -74,7 +82,7 @@ function mkContext(binding) {
   return { binding, del: [], add: [] };
 }
 
-function matchRule(rule, tuples) {
+function matchRule(js, rule, tuples) {
   let { name, guard, body } = rule;
   let db = dbOfList(tuples);
   let bindings = af(evalQuery(db, js, guard));
@@ -84,10 +92,10 @@ function matchRule(rule, tuples) {
     lines: body,
   };
 }
-function matchRules(rules, tuples) {
+function matchRules(js, rules, tuples) {
   let result = [];
   for (let rule of rules) {
-    let { name, contexts, lines } = matchRule(rule, tuples);
+    let { name, contexts, lines } = matchRule(js, rule, tuples);
     if (contexts.length > 0) {
       lines.reverse().forEach((operations) => {
         result.push(mkLine({ name, contexts, operations, ruleText: rule.ruleText }));
@@ -210,7 +218,7 @@ function fixStack(db, rules, js, trace, stack) {
     if (debugIterTag) console.log(obj.tag);
     switch (obj.tag) {
       case "newTuples":
-        let matches = matchRules(rules, obj.value);
+        let matches = matchRules(js, rules, obj.value);
         stack = stack.concat(matches);
         if (debugSteps) console.log("    matches: ", str(matches));
         break;
@@ -229,6 +237,7 @@ function fixStack(db, rules, js, trace, stack) {
               rules,
               trace,
               stack,
+              js,
 
               contexts,
               operations,
@@ -387,7 +396,7 @@ function checkGlobalChoiceState() {
   }
   // ready to go
   globalChoiceState.elements.forEach(d.remove);
-  let { db, rules, trace, stack, contexts, operations, name, ruleText } =
+  let { js, db, rules, trace, stack, contexts, operations, name, ruleText } =
     globalChoiceState.entry;
   for (let c of contexts) {
     c.binding._choices = Array.from(globalChoiceState.states.get(c).chosen);
@@ -405,18 +414,19 @@ function checkChoiceState(state) {
   }
 }
 
-let db = emptyDb();
+function oldMain() {
+  let db = emptyDb();
 
-function mkRule(name, guard, ruleText) {
-  return {
-    guard: [parseNonterminal("relation", guard)],
-    body: [parseLine(ruleText)],
-    name,
-    ruleText: `(${guard}): ${ruleText}`,
-  };
-}
+  function mkRule(name, guard, ruleText) {
+    return {
+      guard: [parseNonterminal("relation", guard)],
+      body: [parseLine(ruleText)],
+      name,
+      ruleText: `(${guard}): ${ruleText}`,
+    };
+  }
 
-let ruleText = `
+  let ruleText = `
 (init): after (turn 1).
 (init): after (token _).
 
@@ -442,36 +452,34 @@ turn-move
 
 render-land (position l r c): !mkLand(l, r, c).
 `;
-let rules = parseRules(ruleText);
+  let rules = parseRules(ruleText);
 
-console.log("rules: ", rules);
+  console.log("rules: ", rules);
 
-function mkInt(value) {
-  return { tag: "int", value };
-}
-// todo: not global?
-let js = {
-  incr: (x) => {
-    // todo: annoying
-    return mkInt(x.value + 1);
-  },
-  mkLand: (id, row, column) => {
-    let w = 80;
-    let margin = 10;
-    let padding = 10;
-    let e = s.mkRectangle(
-      padding / 2 + margin + (column.value - 1) * (w + padding),
-      padding / 2 + margin + (row.value - 1) * (w + padding),
-      w,
-      w
-    );
-    e.setAttribute("my-id", ppTerm(id));
-  },
-};
+  function mkInt(value) {
+    return { tag: "int", value };
+  }
+  let js = {
+    incr: (x) => {
+      // todo: annoying
+      return mkInt(x.value + 1);
+    },
+    mkLand: (id, row, column) => {
+      let w = 80;
+      let margin = 10;
+      let padding = 10;
+      let e = s.mkRectangle(
+        padding / 2 + margin + (column.value - 1) * (w + padding),
+        padding / 2 + margin + (row.value - 1) * (w + padding),
+        w,
+        w
+      );
+      e.setAttribute("my-id", ppTerm(id));
+    },
+  };
 
-window.onload = () => {
   let contexts = [mkContext({})];
-  let trace = mkTrace();
+  let trace = mkTrace(db);
   function go(ruleText) {
     let operations = parseLine(ruleText);
     return fixStack(db, rules, js, trace, [
@@ -479,12 +487,7 @@ window.onload = () => {
     ]);
   }
   go(`after(init)`);
-};
-
-let ap = Symbol("partial-apply");
-Function.prototype[ap] = function (e) {
-  return (...args) => this.apply(this, [e].concat(args));
-};
+}
 
 function mkCompositeEvent(values) {
   return { ...values, tag: "concurrent", id: freshId() };
@@ -607,18 +610,33 @@ function updateEvent(root, id, fn) {
   }
 }
 
+function renderButton(content, context, action, parent) {
+  let e = d.createChild("div", parent);
+  e.innerHTML = content;
+  e.onmouseenter = () => {
+    context.forEach((e) => e.classList.add("hl"));
+    e.classList.add("hl");
+  };
+  e.onmouseleave = () => {
+    context.forEach((e) => e.classList.remove("hl"));
+    e.classList.remove("hl");
+  };
+  e.onclick = action;
+}
+
 // event test
-{
+function newMain() {
   let pe = parseNonterminal[ap]("event_expr");
+  let e = toTag(pe); // ([str]) => pe(str);
 
   let defs = new ArrayMap([
-    ["turn", [pe("grow -> defend")]],
-    ["grow", [pe(".")]],
-    ["defend", [pe(".")]],
+    ["turn", [e`grow , defend`]],
+    ["grow", [e`.`]],
+    ["defend", [e`.`]],
   ]);
 
   let triggers = new ArrayMap([
-    ["turn", [pe("turn")]],
+    ["turn", [e`turn`]],
     ["grow", []],
     ["defend", []],
   ]);
@@ -626,6 +644,7 @@ function updateEvent(root, id, fn) {
   let finishPrimitive = (e) => {
     return { ...e, value: e.value.slice(0, e.value.length - 1) };
   };
+
   function step(e, n) {
     let [ev, options] = reduceEvent(e);
     while (ev && options.length > 0 && n-- > 0) {
@@ -640,11 +659,41 @@ function updateEvent(root, id, fn) {
   console.log("parse", pe("."));
   console.log("parse", pe("turn"));
   console.log("parse", pe("(grow -> defend)"));
-  let e1 = beginEvent({ defs, triggers }, pe("turn"));
-  console.log("e1: ", str(e1));
-  console.log("e1.next: ", e1.next());
-  step(e1, 10);
+  let ev, options;
+  ev = beginEvent({ defs, triggers }, pe("turn"));
+  console.log("e1: ", str(ev));
+  console.log("e1.next: ", ev.next());
+
+  let app;
+  function updateUI() {
+    [ev, options] = reduceEvent(ev);
+    console.log(options.length);
+    if (app) d.remove(app);
+    app = d.createChildId("div", "left");
+    options.forEach((o) =>
+      renderButton(
+        str(o),
+        [],
+        () => {
+          console.log("click: ", o);
+          updateEvent(ev, o.id, finishPrimitive);
+          updateUI();
+        },
+        app
+      )
+    );
+  }
+  updateUI();
 }
+
+window.onload = newMain;
+
+/* todo now
+fix options: primitive should contain name and relevant content
+observation
+  dbs at nodes
+choice
+*/
 
 /* later plan
 mouseenter tuple -> highlight icons
