@@ -3,8 +3,8 @@ function assert(cond, msg) {
 }
 
 class MonoidMap {
-  constructor(zero, plus) {
-    this.map = new Map();
+  constructor(zero, plus, values) {
+    this.map = new Map(values);
     this.zero = zero;
     this.plus = plus;
   }
@@ -24,10 +24,11 @@ class MonoidMap {
 }
 
 class ArrayMap extends MonoidMap {
-  constructor() {
+  constructor(values) {
     super(
       () => [],
-      (a, b) => a.push(b)
+      (a, b) => a.push(b),
+      values
     );
   }
 }

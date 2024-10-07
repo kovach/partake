@@ -165,8 +165,7 @@ function isLiteral(term) {
 }
 
 function isVar(term) {
-  assert(term.tag !== undefined);
-  return term.tag === "var";
+  return !isLiteral(term);
 }
 
 function evalTerm(js, binding, term) {
@@ -180,38 +179,29 @@ function evalTerm(js, binding, term) {
     }
   }
   if (term.value in binding) return binding[term.value];
-  throw "var missing from binding";
+  return term;
 }
 
 // todo profile
-function extendBinding(js, c, tag, tuple, terms) {
-  //if (tag === "in") throw "";
-  for (let index = 0; index < terms.length; index++) {
-    let term = terms[index];
-    if (isLiteral(term)) {
-      let val = evalTerm(js, binding, term);
-      if (!valEqual(val, tuple[index])) return false;
-    } else if (
-      term.value in c.binding &&
-      !valEqual(c.binding[term.value], tuple[index])
-    ) {
-      return false;
-    }
+function extendBinding(c, tag, tuple, values) {
+  for (let index = 0; index < values.length; index++) {
+    let term = values[index];
+    if (isLiteral(term) && !valEqual(term, tuple[index])) return false;
   }
   c = structuredClone(c);
-  for (let index = 0; index < terms.length; index++) {
-    let term = terms[index];
-    if (isLiteral(term)) continue;
-    c.binding[term.value] = tuple[index];
+  for (let index = 0; index < values.length; index++) {
+    let term = values[index];
+    if (isVar(term)) c.binding[term.value] = tuple[index];
   }
   c.used.push([tag, tuple]);
   return c;
 }
 function* joinBindings(js, cs, { tag, tuples, terms }) {
   for (let c of cs) {
+    let values = terms.map((t) => evalTerm(js, c.binding, t));
     for (let tuple of tuples) {
-      let c_ = extendBinding(js, c, tag, tuple, terms);
-      if (c_ !== false) yield c_;
+      let newC = extendBinding(c, tag, tuple, values);
+      if (newC !== false) yield newC;
     }
   }
 }
@@ -343,22 +333,19 @@ function freshId() {
 }
 
 function unrename(js, tuple, terms) {
-  let result = [];
-  terms.forEach((term) => {
-    if (isLiteral(term)) result.push(evalTerm(js, tuple, term));
+  return terms.map((term) => {
+    if (isLiteral(term)) return evalTerm(js, tuple, term);
     else {
       assert(isVar(term));
-      //console.log("!!!!!!", term, tuple);
       let v = term.value;
-      if (v in tuple) result.push(tuple[v]);
+      if (v in tuple) return tuple[v];
       else {
         let id = freshId();
         tuple[v] = id;
-        result.push(id);
+        return id;
       }
     }
   });
-  return result;
 }
 
 function evalRule(db, { query, output }) {
@@ -591,6 +578,6 @@ export {
   evalQuery,
   isLiteral,
   valEqual,
-  extendBinding,
   evalTerm,
+  freshId,
 };

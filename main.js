@@ -9,6 +9,8 @@ import {
   dbContains,
   evalQuery,
   evalTerm,
+  freshId,
+  valEqual,
 } from "./join.js";
 
 import { assert, ArrayMap } from "./collections.js";
@@ -88,9 +90,7 @@ function matchRules(rules, tuples) {
     let { name, contexts, lines } = matchRule(rule, tuples);
     if (contexts.length > 0) {
       lines.reverse().forEach((operations) => {
-        result.push(
-          mkLine({ name, contexts, operations, ruleText: rule.ruleText })
-        );
+        result.push(mkLine({ name, contexts, operations, ruleText: rule.ruleText }));
       });
     }
   }
@@ -118,11 +118,14 @@ function stepOperation(db, js, contexts, operation) {
     }
   }
   let doRel = ({ binding }, { del, add }) => ({ binding, del, add });
-  let doBeforeRel = ({ binding, used }, { del, add }) => ({
-    binding,
-    del: del.concat([used[0]]),
-    add,
-  });
+  let doBeforeRel = ({ binding, used }, { del, add }) => {
+    del.push(used[0]);
+    return {
+      binding,
+      del,
+      add,
+    };
+  };
 
   let result = [];
   switch (operation.tag) {
@@ -134,10 +137,11 @@ function stepOperation(db, js, contexts, operation) {
       break;
     case "after":
       for (let { binding, del, add } of contexts) {
+        add.push(makeTuple(js, binding, operation.pattern)); // modifies binding
         result.push({
           binding,
           del,
-          add: add.concat([makeTuple(js, binding, operation.pattern)]),
+          add,
         });
       }
       break;
@@ -146,12 +150,9 @@ function stepOperation(db, js, contexts, operation) {
     case "countQuery":
       for (let c of contexts) {
         let { name, body } = operation;
-        let choices = af(
-          evalQuery(db, js, body, [{ binding: c.binding, used: [] }])
-        );
+        let choices = af(evalQuery(db, js, body, [{ binding: c.binding, used: [] }]));
         if (operation.tag === "subQuery") c.binding[name] = choices;
-        else if (operation.tag === "countQuery")
-          c.binding[name] = choices.length;
+        else if (operation.tag === "countQuery") c.binding[name] = choices.length;
         else throw "unreachable";
         result.push(c);
       }
@@ -181,7 +182,6 @@ function stepOperation(db, js, contexts, operation) {
         evalTerm(js, c.binding, operation.value);
         result.push(c);
       }
-
       break;
     case "takeChoice":
       throw "unreachable: `takeChoice` is handled by fixStack";
@@ -192,18 +192,18 @@ function stepOperation(db, js, contexts, operation) {
   return result;
 }
 
-function unionContexts(contexts) {
-  let del = [];
-  let add = [];
-  for (let { del: d, add: a } of contexts) {
-    for (let t of d) del.push(t);
-    for (let t of a) add.push(t);
-  }
-  return { del, add };
-}
-
 let stepLimit = 200;
 function fixStack(db, rules, js, trace, stack) {
+  function unionContexts(contexts) {
+    let del = [];
+    let add = [];
+    for (let { del: d, add: a } of contexts) {
+      for (let t of d) del.push(t);
+      for (let t of a) add.push(t);
+    }
+    return { del, add };
+  }
+
   let count = 0;
   loop: while (stack.length > 0 && count++ < stepLimit) {
     let obj = stack.pop();
@@ -247,8 +247,7 @@ function fixStack(db, rules, js, trace, stack) {
             );
           }
         } else {
-          if (debugResult)
-            console.log("    result: ", JSON.stringify(contexts));
+          if (debugResult) console.log("    result: ", JSON.stringify(contexts));
           let { del, add } = unionContexts(contexts);
           for (let [tag, tuple] of del) dbAddTuple(db, tag, tuple, -1);
           for (let [tag, tuple] of add) dbAddTuple(db, tag, tuple, +1);
@@ -338,9 +337,7 @@ function renderTraceEntry(entry) {
       e.innerHTML = name;
       elementDbMap.set(e, db);
       e.onmouseenter = () => {
-        let prevDb = e.previousSibling
-          ? elementDbMap.get(e.previousSibling)
-          : emptyDb();
+        let prevDb = e.previousSibling ? elementDbMap.get(e.previousSibling) : emptyDb();
         renderDb(db, prevDb, e);
         d.getId("rule").innerHTML = ruleText;
       };
@@ -459,17 +456,22 @@ let js = {
     return mkInt(x.value + 1);
   },
   mkLand: (id, row, column) => {
-    let w = 100;
-    let e = s.mkRectangle(column.value * (w + 10), row.value * (w + 10), w, w);
+    let w = 80;
+    let margin = 10;
+    let padding = 10;
+    let e = s.mkRectangle(
+      padding / 2 + margin + (column.value - 1) * (w + padding),
+      padding / 2 + margin + (row.value - 1) * (w + padding),
+      w,
+      w
+    );
     e.setAttribute("my-id", ppTerm(id));
   },
 };
 
 window.onload = () => {
   let contexts = [mkContext({})];
-
   let trace = mkTrace();
-
   function go(ruleText) {
     let operations = parseLine(ruleText);
     return fixStack(db, rules, js, trace, [
@@ -479,58 +481,177 @@ window.onload = () => {
   go(`after(init)`);
 };
 
-/* plan
+let ap = Symbol("partial-apply");
+Function.prototype[ap] = function (e) {
+  return (...args) => this.apply(this, [e].concat(args));
+};
 
-semicolon
-before/after in subquery?
+function mkCompositeEvent(values) {
+  return { ...values, tag: "concurrent", id: freshId() };
+}
+function mkPrimitiveEvent(values) {
+  return { ...values, tag: "primitive", id: freshId() };
+}
+function isComposite(event) {
+  return event.tag === "concurrent";
+}
+// foo
+// a -> b
+// a, b
+// [ _ | ...]
+// StaticEventExpr = sequence(a, b) | concurrent(a,b) | literal(name) | with-tuples(tuples, SEE)
+//   -> EventState { value: line, parent EventState, next: () -> EventState }
+function makeEventByName(rules, name) {
+  let now = rules.defs.get(name);
+  let after = rules.triggers.get(name);
+  let begin = beginEvent[ap](rules);
+  let node = mkCompositeEvent({ name, value: now.map(begin) });
+  node.next = () => mkCompositeEvent({ name: `${name}'`, value: after.map(begin) });
+  return node;
+}
+function beginEvent(rules, expr) {
+  let recurse = beginEvent[ap](rules);
+  switch (expr.tag) {
+    case "done": {
+      // todo
+      return mkPrimitiveEvent({ value: [0] });
+    }
+    case "literal": {
+      return makeEventByName(rules, expr.name);
+    }
+    case "concurrent": {
+      let { a, b } = expr;
+      return mkCompositeEvent({ value: [recurse(a), recurse(b)] });
+    }
+    case "sequence": {
+      let { a, b } = expr;
+      return mkCompositeEvent({ value: [recurse(a)], next: () => recurse(b) });
+    }
+    case "with-tuples": {
+      let { tuples, body } = expr;
+      return mkCompositeEvent({ value: [recurse(body)], tuples });
+    }
+  }
+}
 
+function eventCompleted(event) {
+  // todo
+  return (
+    (event.tag === "concurrent" && event.value.length === 0) ||
+    (event.tag === "primitive" && event.value.length === 0)
+  );
+}
+
+function arrayUpdate(arr, f) {
+  for (let i = 0; i < arr.length; i++) {
+    arr[i] = f(arr[i]);
+  }
+  return arr;
+}
+
+// implement early exit behavior
+function forEach(arr, f) {
+  for (let i = 0; i < arr.length; i++) {
+    if (f(arr[i], i)) return true;
+  }
+  return false;
+}
+
+function reduceEvent(event) {
+  let options = [];
+  event = reduceEvent_(event, options);
+  return [event, options];
+}
+function reduceEvent_(event, options) {
+  //console.log("visit: ", event.id, event.tag);
+  switch (event.tag) {
+    case "concurrent": {
+      event.value = arrayUpdate(event.value, (e) => reduceEvent_(e, options)).filter(
+        (x) => x
+      );
+      break;
+    }
+  }
+  if (eventCompleted(event)) {
+    if (event.name) console.log(`finishing ${event.name}`);
+    if (event.next) return reduceEvent_(event.next(), options);
+    return false;
+  } else {
+    if (event.tag === "primitive") options.push(event);
+    return event;
+  }
+}
+
+// invariant: event object is sufficient to present UI necessary for updating it
+
+// find path from root to event
+// construct total db
+// call fn on event+db
+// replace event with result
+function updateEvent(root, id, fn) {
+  if (valEqual(root.id, id)) {
+    return fn(root);
+  } else if (isComposite(root)) {
+    if (
+      forEach(root.value, (c, i) => {
+        let c_ = updateEvent(c, id, fn);
+        if (c_) {
+          root.value[i] = c_;
+          return true;
+        }
+      })
+    ) {
+      return root;
+    }
+    return false;
+  }
+}
+
+// event test
+{
+  let pe = parseNonterminal[ap]("event_expr");
+
+  let defs = new ArrayMap([
+    ["turn", [pe("grow -> defend")]],
+    ["grow", [pe(".")]],
+    ["defend", [pe(".")]],
+  ]);
+
+  let triggers = new ArrayMap([
+    ["turn", [pe("turn")]],
+    ["grow", []],
+    ["defend", []],
+  ]);
+
+  let finishPrimitive = (e) => {
+    return { ...e, value: e.value.slice(0, e.value.length - 1) };
+  };
+  function step(e, n) {
+    let [ev, options] = reduceEvent(e);
+    while (ev && options.length > 0 && n-- > 0) {
+      updateEvent(ev, options[0].id, finishPrimitive);
+      let r = reduceEvent(ev);
+      ev = r[0];
+      options = r[1];
+      console.log(options);
+    }
+  }
+
+  console.log("parse", pe("."));
+  console.log("parse", pe("turn"));
+  console.log("parse", pe("(grow -> defend)"));
+  let e1 = beginEvent({ defs, triggers }, pe("turn"));
+  console.log("e1: ", str(e1));
+  console.log("e1.next: ", e1.next());
+  step(e1, 10);
+}
+
+/* later plan
+mouseenter tuple -> highlight icons
+choose any
 declarative ui
   land l, token t, in t l
     just handle with parents
-
-end-to-end with graphics!
-  display board, cards, tokens, hands, decks, growth-track
-  choose growth
-  choose cards, pay
-  fast phase
-  invader phase
-    ravage
-    build
-    explore
-  slow phase
-
-  mixed throughout above:
-    card activation
-    core concepts
-      push, gather, damage, energy, presence, range
-
-choose any
-
-easy
-  turn db into class
-  introduce `do` for events?
-  parse rules
-  parse multi-line rules
-
 value/dynamic breakpoint?
-schemas?
-attach stack/rule data to each trace entry
-  call renderDb on choice mouseover
-  rule intermediate results
-render choice accept button with state clues
-  (1/2, done?)
 default actions (handle unique choice)
-rule editor on screen
-  reload rules
-  undo to point on trace
-    need to store old stacks
-
-binding picker for each quantifier type
-
-**later**
-parse diffs
-  relate parse of edited rule to previous
-  update active choices
-    (if rule modified, reset to beginning)
-
 */

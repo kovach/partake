@@ -24,6 +24,7 @@ term -> fnCall {% id %}
 # pred2 x y -> ["pred", ["x", "y"]]
 relation -> predicate (__ term):* {% (d) => {return [d[0], d[1].map(t => t[1])]} %}
 
+# , | ;
 # p2 x y, p1 z, foo
 pureQuery -> null {% () => [] %}
 pureQuery -> relation {% (d) => [d[0]] %}
@@ -62,10 +63,21 @@ operation -> term _ "=" _ term
     ];
   } %}
 
+separator -> "," {% id %}
+separator -> ";" {% id %}
+
 # foo x, after (rel a, rel b)
 line -> null {% () => [] %}
-line -> operation {% id %}
-line -> operation _ "," _ line {% (d) => d[0].concat(d[4]) %}
+line -> operation separator:?
+  {% (d) => {
+    d[0].sep = d[1] ? d[1] : ",";
+    return d[0];
+  } %}
+line -> operation _ separator _ line
+  {% (d) => {
+    d[0].sep = d[2];
+    return d[0].concat(d[4])
+  } %}
 
 # rule-name (action a): foo a, bar a b.
 rule -> identifier:? _ "(" _ pureQuery _ "):" _ line _ "." {%
@@ -83,3 +95,12 @@ program -> (_ rule _):* {% (d) => d[0].map((r) => r[1]) %}
 # whitespace
 _ -> null | _ [\s] {% function() {} %}
 __ -> [\s] | __ [\s] {% function() {} %}
+
+# new syntax
+
+event_expr -> "." {% (d) => ({ tag: "done"}) %}
+event_expr -> identifier {% (d) => ({ tag: "literal", name: d[0]}) %}
+event_expr -> "(" _ event_expr _ ")" {% (d) => d[2] %}
+event_expr -> event_expr _ "," _ event_expr  {% (d) => ({ tag: "concurrent", a: d[0], b: d[4]}) %}
+event_expr -> event_expr _ "->" _ event_expr  {% (d) => ({ tag: "sequence", a: d[0], b: d[4]}) %}
+event_expr -> "[" _ event_expr _ "|" "]" {% (d) => ({ tag: "with-tuples", body: d[2], tuples: {}}) %}
