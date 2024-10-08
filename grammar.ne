@@ -110,4 +110,4 @@ rule_separator -> _ "->" _ {% () => 'trigger' %}
 rule -> identifier rule_separator episode_expr _ "."
   {% (d) => ({head: d[0], type: d[1], body: d[2] }) %}
 
-program -> (_ rule _):* {% (d) => d[0].map((r) => r[1]) %}
+program -> (_ rule):* _ {% (d) => d[0].map((r) => r[1]) %}
