@@ -555,7 +555,7 @@ function substituteEventExpr(binding, expr) {
     case "with-tuples": {
       let { tuples, body } = expr;
       // todo: apply binding to tuples
-      //tuples = tuples.map((t) => unrename(js, binding.binding, t));
+      //tuples = tuples.map((t) => makeTuple(js, binding.binding, t));
       return { ...expr, tuples, body: recurse(body) };
     }
   }
@@ -592,7 +592,7 @@ function beginEvent(rules, expr) {
     }
     case "with-tuples": {
       let { tuples, body } = expr;
-      return mkCompositeEvent({ value: [recurse(body)], tuples });
+      return mkCompositeEvent({ value: [recurse(body)], db: dbOfList(tuples) });
     }
   }
 }
@@ -704,39 +704,47 @@ function ppEpisode(e) {
     case "do": {
       return `do ${ppEvent(e.value)}`;
     }
+    case "done": {
+      return "done";
+    }
     default:
       throw "asdf";
   }
 }
 
+function parseProgram(text) {
+  let exprs = parseNonterminal("program", text);
+  let defs = new ArrayMap();
+  let triggers = new ArrayMap();
+  for (let e of exprs) {
+    switch (e.type) {
+      case "def": {
+        defs.add(e.head, e.body);
+        break;
+      }
+      case "trigger": {
+        triggers.add(e.head, e.body);
+        break;
+      }
+      default:
+        throw "";
+    }
+  }
+  return { defs, triggers };
+}
 function newMain() {
   let pe = parseNonterminal[ap]("episode_expr");
   let e = toTag(pe); // ([str]) => pe(str);
 
   let programText = `
-
-game: [turn | spirit S, land L1, land L2].
-
+game: do turn.
 turn: spirit S, do grow.
 turn: land L, do defend.
+defend: done.
 turn -> do turn.
-
-do turn.
-
 `;
 
-  let defs = new ArrayMap([
-    ["turn", [e`spirit S, do grow`, e`land L, do defend`]],
-    ["grow", [e`do .`]],
-    ["defend", [e`do .`]],
-  ]);
-
-  let triggers = new ArrayMap([
-    ["turn", [e`do turn`]],
-    ["grow", []],
-    ["defend", []],
-  ]);
-
+  console.log("parse program: ", parseNonterminal("program", programText));
   console.log("parse ep", parseNonterminal("episode_expr", "do ."));
   console.log("parse ep", parseNonterminal("episode_expr", "foo X Y, do ."));
   console.log("parse ep", e`foo X Y, bar Y Z, do (a -> b)`);
@@ -744,8 +752,9 @@ do turn.
   console.log("parse ep", e`do turn`);
 
   let ev, options;
-  let rules = { defs, triggers };
+  let rules = parseProgram(programText);
   let db = emptyDb();
+  // todo
   dbAddTuple(db, "land", [freshId()], +1);
   dbAddTuple(db, "land", [freshId()], +1);
   dbAddTuple(db, "spirit", [freshId()], +1);
@@ -778,12 +787,11 @@ do turn.
 window.onload = newMain;
 
 /* todo now
-parse program
-observation
-  multi-level db, fix substitute
 choice
 before/after
   new binding class
+observation
+  multi-level db, fix substitute
 
 ? draw episodes in progress
 */

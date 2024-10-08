@@ -2,6 +2,8 @@
 
 main -> line {% id %}
 
+number -> [0-9]:+ {% d => parseInt(d[0].join("")) %}
+
 # var, Var
 identifier -> [a-zA-Z_] [a-zA-Z0-9'_-]:*  {% (d) => d[0] + d[1].join("") %}
 var -> identifier {% id %}
@@ -33,8 +35,6 @@ pureQuery -> relation _ "," _ pureQuery {% (d) => [d[0]].concat(d[4]) %}
 # foo x | after (rel a, rel b)
 operation -> relation {% (d) => { return [{ tag: "rel", pattern: d[0] }] } %}
 operation -> fnCall {% (d) => ([{ tag: "call", value:  d[0] }]) %}
-operation -> "after" _  "(" _ pureQuery _ ")" {% (d) => { return d[4].map((r) => ({ tag: "after", pattern: r })) } %}
-operation -> "before" _ "(" _ pureQuery _ ")" {% (d) => { return d[4].map((r) => ({ tag: "before", pattern: r })) } %}
 # (TODO: other quantifiers)
 operation -> "choose" _ "[exactly 1]" _ "(" _ pureQuery _ ")"
   {% (d) => {
@@ -79,32 +79,35 @@ line -> operation _ separator _ line
     return d[0].concat(d[4])
   } %}
 
-# rule-name (action a): foo a, bar a b.
-rule -> identifier:? _ "(" _ pureQuery _ "):" _ line _ "." {%
-  (d) => {
-      return {
-          guard: d[4],
-          body: [d[8]],
-          name: d[0] ? d[0] : "(anonymous rule)",
-          ruleText: "",
-      };
-  } %}
-
-program -> (_ rule _):* {% (d) => d[0].map((r) => r[1]) %}
-
 # whitespace
 _ -> null | _ [\s] {% function() {} %}
 __ -> [\s] | __ [\s] {% function() {} %}
 comma -> _ "," _ {% () => null %}
+op -> "(" _ {% () => null %}
+cp -> _ ")" {% () => null %}
 
 # new syntax
 
-event_expr -> "." {% (d) => ({ tag: "done"}) %}
+event_expr -> "." {% (d) => ({ tag: "done"}) %} # todo remove
 event_expr -> identifier {% (d) => ({ tag: "literal", name: d[0]}) %}
 event_expr -> "(" _ event_expr _ ")" {% (d) => d[2] %}
 event_expr -> event_expr comma event_expr  {% (d) => ({ tag: "concurrent", a: d[0], b: d[2]}) %}
 event_expr -> event_expr _ "->" _ event_expr  {% (d) => ({ tag: "sequence", a: d[0], b: d[4]}) %}
-event_expr -> "[" _ event_expr _ "|" "]" {% (d) => ({ tag: "with-tuples", body: d[2], tuples: {}}) %}
+event_expr -> "[" _ event_expr _ "|" pureQuery "]" {% (d) => ({ tag: "with-tuples", body: d[2], tuples: d[5]}) %}
 
-episode_expr -> "do" _ event_expr {% (d) => ({tag: "do", value: d[2]}) %}
+quantifier -> number {% id %}
+episode_expr -> "done" {% (d) => ({tag: "done"}) %}
+episode_expr -> "do" __ event_expr {% (d) => ({tag: "do", value: d[2]}) %}
 episode_expr -> relation comma episode_expr {% (d) => ({ tag: "observation", pattern: d[0], rest: d[2] }) %}
+# todo: X> and >X.
+episode_expr -> op pureQuery cp _ ">" _ op pureQuery cp comma episode_expr
+  {% (d) => ({ tag: "modification", before: d[1], after: d[7], rest: d[10] }) %}
+episode_expr -> identifier __ "chooses" __ quantifier __ "?(" _ pureQuery cp
+  {% (d) => ({ tag: "choice", actor: d[0], query: d[9], quantifier: d[4] }) %}
+
+rule_separator -> _ ":" _ {% () => 'def' %}
+rule_separator -> _ "->" _ {% () => 'trigger' %}
+rule -> identifier rule_separator episode_expr _ "."
+  {% (d) => ({head: d[0], type: d[1], body: d[2] }) %}
+
+program -> (_ rule _):* {% (d) => d[0].map((r) => r[1]) %}
