@@ -87,7 +87,7 @@ function mkLine(value) {
 function mkTrace(db) {
   let trace = { entries: [] };
   trace.push = (entry) => {
-    renderDb(db);
+    renderDb(db, "left");
     renderTraceEntry(entry);
     trace.entries.push(entry);
   };
@@ -322,11 +322,11 @@ function ppBinding(binding) {
 let app;
 let valRefs;
 let tupleRefs;
-function renderDb(db, previous) {
+function renderDb(db, parentId, previous) {
   if (app) d.remove(app);
   valRefs = new ArrayMap();
   tupleRefs = new ArrayMap();
-  app = d.createChildId("div", "left");
+  app = d.createChildId("div", parentId);
   for (let [tag, rel] of db.entries()) {
     for (let [value, _] of rel.values()) {
       //console.log(`(${tag} ${value.join(" ")})`);
@@ -364,7 +364,7 @@ function renderTraceEntry(entry) {
       elementDbMap.set(e, db);
       e.onmouseenter = () => {
         let prevDb = e.previousSibling ? elementDbMap.get(e.previousSibling) : emptyDb();
-        renderDb(db, prevDb, e);
+        renderDb(db, "left", prevDb, e);
         d.getId("rule").innerHTML = ruleText;
       };
       break;
@@ -506,41 +506,10 @@ render-land (position l r c): !mkLand(l, r, c).
   go(`after(init)`);
 }
 
-function mkCompositeEvent(values) {
-  return { ...values, tag: "concurrent", id: freshId() };
-}
-function mkPrimitiveEvent(values) {
-  return { ...values, tag: "primitive", id: freshId() };
-}
-function isComposite(event) {
-  return event.tag === "concurrent";
-}
-
-function updateTip({ rules, db, js }, tip) {
-  let { value: episode, context } = tip;
-  switch (episode.tag) {
-    case "observation": {
-      let newC = af(evalQuery(db, js, [episode.pattern], context));
-      return {
-        ...tip,
-        value: episode.rest,
-        context: newC,
-      };
-    }
-    case "do": {
-      return mkCompositeEvent({
-        value: context.map((binding) =>
-          beginEvent(rules, substituteEventExpr(binding, episode.value))
-        ),
-      });
-    }
-  }
-}
-function substituteEventExpr(binding, expr) {
-  let recurse = substituteEventExpr[ap](binding);
+function substituteEventExpr(js, binding, expr) {
+  let recurse = substituteEventExpr[ap](js)[ap](binding);
   switch (expr.tag) {
     case "done": {
-      // todo
       return expr;
     }
     case "literal": {
@@ -556,14 +525,52 @@ function substituteEventExpr(binding, expr) {
     }
     case "with-tuples": {
       let { tuples, body } = expr;
-      // todo: apply binding to tuples
-      //tuples = tuples.map((t) => makeTuple(js, binding.binding, t));
+      // may update binding:
+      tuples = tuples.map((t) => makeTuple(js, binding.binding, t));
       return { ...expr, tuples, body: recurse(body) };
     }
   }
 }
+function mkCompositeEvent(values) {
+  return { ...values, tag: "concurrent", id: freshId() };
+}
+function mkPrimitiveEvent(values) {
+  return { ...values, tag: "primitive", id: freshId() };
+}
 function mkTip(expr) {
   return { id: freshId(), tag: "tip", value: expr, context: [emptyBinding()] };
+}
+function isComposite(event) {
+  return event.tag === "concurrent";
+}
+
+function updateTip({ rules, js }, tip, path) {
+  let { value: episode, context } = tip;
+  let db = dbOfList([].concat(...path.map((node) => node.tuples).filter((x) => x)));
+  renderDb(db, "right");
+  console.log(db);
+  switch (episode.tag) {
+    case "observation": {
+      context = af(evalQuery(db, js, [episode.pattern], context));
+      return {
+        ...tip,
+        value: episode.rest,
+        context,
+      };
+    }
+    case "do": {
+      return mkCompositeEvent({
+        value: context.map((binding) =>
+          beginEvent(rules, substituteEventExpr(js, binding, episode.value))
+        ),
+      });
+    }
+    case "done": {
+      return mkCompositeEvent({ value: [] });
+    }
+    default:
+      throw "";
+  }
 }
 function makeEventByName(rules, name) {
   let now = rules.defs.get(name);
@@ -594,7 +601,7 @@ function beginEvent(rules, expr) {
     }
     case "with-tuples": {
       let { tuples, body } = expr;
-      return mkCompositeEvent({ value: [recurse(body)], db: dbOfList(tuples) });
+      return mkCompositeEvent({ value: [recurse(body)], tuples });
     }
   }
 }
@@ -634,13 +641,14 @@ function reduceEvent_(event, options) {
 }
 
 // todo: find path from root to event, construct total db
-function updateEvent(root, id, fn) {
+function updateEvent(root, path, id, fn) {
   if (valEqual(root.id, id)) {
-    return fn(root);
+    return fn(root, path);
   } else if (isComposite(root)) {
+    path = path.concat([root]);
     if (
       forEach(root.value, (c, i) => {
-        let c_ = updateEvent(c, id, fn);
+        let c_ = updateEvent(c, path, id, fn);
         if (c_) {
           root.value[i] = c_;
           return true;
@@ -654,7 +662,7 @@ function updateEvent(root, id, fn) {
 }
 
 function updateTipById(program, root, id) {
-  return updateEvent(root, id, updateTip[ap](program));
+  return updateEvent(root, [], id, updateTip[ap](program));
 }
 
 function renderButton(content, context, action, parent) {
@@ -739,10 +747,11 @@ function newMain() {
   let e = toTag(pe); // ([str]) => pe(str);
 
   let programText = `
-game: do turn.
-turn: spirit S, do grow.
-turn: land L, do defend.
-defend: done.
+game: do [turn | land a, land b, spirit c].
+turn: spirit S, do [grow | the-spirit S].
+turn: land L, do [defend | the-land L].
+grow: the-spirit S, done.
+defend: the-land L, done.
 turn -> do turn.
 `;
 
@@ -761,7 +770,7 @@ turn -> do turn.
   dbAddTuple(db, "land", [freshId()], +1);
   dbAddTuple(db, "spirit", [freshId()], +1);
   let program = { rules, db, js: {} };
-  ev = mkTip(e`do turn`);
+  ev = mkTip(e`do game`);
 
   let app;
   function updateUI() {
@@ -775,7 +784,6 @@ turn -> do turn.
         ppTip(o),
         [],
         () => {
-          console.log("click: ", o);
           ev = updateTipById(program, ev, o.id);
           updateUI();
         },

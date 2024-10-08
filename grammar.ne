@@ -8,7 +8,7 @@ number -> [0-9]:+ {% d => parseInt(d[0].join("")) %}
 identifier -> [a-zA-Z_] [a-zA-Z0-9'_-]:*  {% (d) => d[0] + d[1].join("") %}
 var -> identifier {% id %}
 # a2bc'
-predicate -> [a-z] [a-zA-Z0-9']:* {% (d) => d[0] + d[1].join("") %}
+predicate -> identifier {% id %} # [a-z] [a-zA-Z0-9']:* {% (d) => d[0] + d[1].join("") %}
 # foo(a, b)
 argList -> null {% (d) => ([]) %}
 argList -> term (_ "," _ argList):?
@@ -93,7 +93,7 @@ event_expr -> identifier {% (d) => ({ tag: "literal", name: d[0]}) %}
 event_expr -> "(" _ event_expr _ ")" {% (d) => d[2] %}
 event_expr -> event_expr comma event_expr  {% (d) => ({ tag: "concurrent", a: d[0], b: d[2]}) %}
 event_expr -> event_expr _ "->" _ event_expr  {% (d) => ({ tag: "sequence", a: d[0], b: d[4]}) %}
-event_expr -> "[" _ event_expr _ "|" pureQuery "]" {% (d) => ({ tag: "with-tuples", body: d[2], tuples: d[5]}) %}
+event_expr -> "[" _ event_expr _ "|" _ pureQuery _ "]" {% (d) => ({ tag: "with-tuples", body: d[2], tuples: d[6]}) %}
 
 quantifier -> number {% id %}
 episode_expr -> "done" {% (d) => ({tag: "done"}) %}

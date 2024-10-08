@@ -80,6 +80,9 @@ function dbAddDb(db1, db2) {
   }
   return db1;
 }
+function addDbs(dbs) {
+  return dbs.reduce(dbAddDb, emptyDb());
+}
 function clone(db) {
   return dbAddDb(emptyDb(), db);
 }
@@ -119,11 +122,10 @@ function* iterDb(db) {
   }
 }
 function printDb(db) {
-  console.log(
-    af(db.entries())
-      .map(([tag, rel]) => [tag, af(rel.entries()).map(([key, [_, c]]) => [key, c])])
-      .map((x) => str(x))
-  );
+  return af(db.entries()).map(([tag, rel]) => [
+    tag,
+    af(rel.entries()).map(([key, [_, c]]) => [key, c]),
+  ]);
 }
 /* end variables */
 
