@@ -11,6 +11,7 @@ import {
   evalTerm,
   freshId,
   valEqual,
+  emptyBinding,
 } from "./join.js";
 
 import { assert, ArrayMap } from "./collections.js";
@@ -30,6 +31,19 @@ Function.prototype[ap] = function (e) {
 };
 function toTag(f) {
   return ([str]) => f(str);
+}
+function arrayUpdate(arr, f) {
+  for (let i = 0; i < arr.length; i++) {
+    arr[i] = f(arr[i]);
+  }
+  return arr;
+}
+// implement early exit behavior
+function forEach(arr, f) {
+  for (let i = 0; i < arr.length; i++) {
+    if (f(arr[i], i)) return true;
+  }
+  return false;
 }
 
 // Create a Parser object from our grammar.
@@ -498,26 +512,73 @@ function mkPrimitiveEvent(values) {
 function isComposite(event) {
   return event.tag === "concurrent";
 }
-// foo
-// a -> b
-// a, b
-// [ _ | ...]
-// StaticEventExpr = sequence(a, b) | concurrent(a,b) | literal(name) | with-tuples(tuples, SEE)
-//   -> EventState { value: line, parent EventState, next: () -> EventState }
+
+function updateTip({ rules, db, js }, tip) {
+  let { value: episode, context } = tip;
+  switch (episode.tag) {
+    case "observation": {
+      let newC = af(evalQuery(db, js, [episode.pattern], context));
+      console.log(str(context));
+      console.log(str(newC));
+      return {
+        ...tip,
+        value: episode.rest,
+        context: newC,
+      };
+    }
+    case "do": {
+      return mkCompositeEvent({
+        value: context.map((binding) =>
+          beginEvent(rules, substituteEventExpr(binding, episode.value))
+        ),
+      });
+    }
+  }
+}
+function substituteEventExpr(binding, expr) {
+  let recurse = substituteEventExpr[ap](binding);
+  switch (expr.tag) {
+    case "done": {
+      // todo
+      return expr;
+    }
+    case "literal": {
+      return expr;
+    }
+    case "concurrent": {
+      let { a, b } = expr;
+      return { ...expr, a: recurse(a), b: recurse(b) };
+    }
+    case "sequence": {
+      let { a, b } = expr;
+      return { ...expr, a: recurse(a), b: recurse(b) };
+    }
+    case "with-tuples": {
+      let { tuples, body } = expr;
+      // todo: apply binding to tuples
+      //tuples = tuples.map((t) => unrename(js, binding.binding, t));
+      return { ...expr, tuples, body: recurse(body) };
+    }
+  }
+}
+function makeTip(expr) {
+  return { id: freshId(), tag: "tip", value: expr, context: [emptyBinding()] };
+}
 function makeEventByName(rules, name) {
   let now = rules.defs.get(name);
   let after = rules.triggers.get(name);
-  let begin = beginEvent[ap](rules);
-  let node = mkCompositeEvent({ name, value: now.map(begin) });
-  node.next = () => mkCompositeEvent({ name: `${name}'`, value: after.map(begin) });
+  let node = mkCompositeEvent({ name, value: now.map(makeTip) });
+  node.next = () => mkCompositeEvent({ name: `${name}'`, value: after.map(makeTip) });
   return node;
 }
+
+// StaticEventExpr = sequence(a, b) | concurrent(a,b) | literal(name) | with-tuples(tuples, a)
 function beginEvent(rules, expr) {
   let recurse = beginEvent[ap](rules);
   switch (expr.tag) {
     case "done": {
       // todo
-      return mkPrimitiveEvent({ value: [0] });
+      return mkPrimitiveEvent({ value: [] });
     }
     case "literal": {
       return makeEventByName(rules, expr.name);
@@ -545,26 +606,12 @@ function eventCompleted(event) {
   );
 }
 
-function arrayUpdate(arr, f) {
-  for (let i = 0; i < arr.length; i++) {
-    arr[i] = f(arr[i]);
-  }
-  return arr;
-}
-
-// implement early exit behavior
-function forEach(arr, f) {
-  for (let i = 0; i < arr.length; i++) {
-    if (f(arr[i], i)) return true;
-  }
-  return false;
-}
-
 function reduceEvent(event) {
   let options = [];
   event = reduceEvent_(event, options);
   return [event, options];
 }
+
 function reduceEvent_(event, options) {
   //console.log("visit: ", event.id, event.tag);
   switch (event.tag) {
@@ -580,17 +627,12 @@ function reduceEvent_(event, options) {
     if (event.next) return reduceEvent_(event.next(), options);
     return false;
   } else {
-    if (event.tag === "primitive") options.push(event);
+    if (event.tag === "tip") options.push(event);
     return event;
   }
 }
 
-// invariant: event object is sufficient to present UI necessary for updating it
-
-// find path from root to event
-// construct total db
-// call fn on event+db
-// replace event with result
+// todo: find path from root to event, construct total db
 function updateEvent(root, id, fn) {
   if (valEqual(root.id, id)) {
     return fn(root);
@@ -610,6 +652,10 @@ function updateEvent(root, id, fn) {
   }
 }
 
+function updateTipById(program, root, id) {
+  return updateEvent(root, id, updateTip[ap](program));
+}
+
 function renderButton(content, context, action, parent) {
   let e = d.createChild("div", parent);
   e.innerHTML = content;
@@ -624,45 +670,36 @@ function renderButton(content, context, action, parent) {
   e.onclick = action;
 }
 
-// event test
 function newMain() {
-  let pe = parseNonterminal[ap]("event_expr");
+  let pe = parseNonterminal[ap]("episode_expr");
   let e = toTag(pe); // ([str]) => pe(str);
 
   let defs = new ArrayMap([
-    ["turn", [e`grow , defend`]],
-    ["grow", [e`.`]],
-    ["defend", [e`.`]],
+    ["turn", [e`p X, do grow`, e`do defend`]],
+    ["grow", [e`do .`]],
+    ["defend", [e`do .`]],
   ]);
 
   let triggers = new ArrayMap([
-    ["turn", [e`turn`]],
+    ["turn", [e`do turn`]],
     ["grow", []],
     ["defend", []],
   ]);
 
-  let finishPrimitive = (e) => {
-    return { ...e, value: e.value.slice(0, e.value.length - 1) };
-  };
+  console.log("parse ep", parseNonterminal("episode_expr", "do ."));
+  console.log("parse ep", parseNonterminal("episode_expr", "foo X Y, do ."));
+  console.log("parse ep", e`foo X Y, bar Y Z, do (a -> b)`);
+  console.log("parse ep", e`foo X Y, bar Y Z, do a, b`);
+  console.log("parse ep", e`do turn`);
 
-  function step(e, n) {
-    let [ev, options] = reduceEvent(e);
-    while (ev && options.length > 0 && n-- > 0) {
-      updateEvent(ev, options[0].id, finishPrimitive);
-      let r = reduceEvent(ev);
-      ev = r[0];
-      options = r[1];
-      console.log(options);
-    }
-  }
-
-  console.log("parse", pe("."));
-  console.log("parse", pe("turn"));
-  console.log("parse", pe("(grow -> defend)"));
   let ev, options;
-  ev = beginEvent({ defs, triggers }, pe("turn"));
-  console.log("e1: ", str(ev));
-  console.log("e1.next: ", ev.next());
+  let rules = { defs, triggers };
+  let db = emptyDb();
+  dbAddTuple(db, "p", [freshId()], +1);
+  dbAddTuple(db, "p", [freshId()], +1);
+  dbAddTuple(db, "q", [freshId()], +1);
+  let program = { rules, db, js: {} };
+  ev = makeTip(e`do turn`);
 
   let app;
   function updateUI() {
@@ -676,7 +713,7 @@ function newMain() {
         [],
         () => {
           console.log("click: ", o);
-          updateEvent(ev, o.id, finishPrimitive);
+          ev = updateTipById(program, ev, o.id);
           updateUI();
         },
         app
@@ -689,10 +726,13 @@ function newMain() {
 window.onload = newMain;
 
 /* todo now
-fix options: primitive should contain name and relevant content
 observation
-  dbs at nodes
+  multi-level db, fix substitute
 choice
+before/after
+  new binding class
+
+? draw episodes in progress
 */
 
 /* later plan

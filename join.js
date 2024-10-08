@@ -1,5 +1,5 @@
 import { assert } from "./collections.js";
-const str = JSON.stringify;
+const str = (e) => JSON.stringify(e, null, 2);
 const pp = (x) => console.log(str(x));
 const compose = (f, g) => (x) => f(g(x));
 const af = Array.from;
@@ -150,6 +150,9 @@ function evalTerm(js, binding, term) {
   return term;
 }
 
+function emptyBinding() {
+  return { binding: {}, used: [] };
+}
 // todo profile
 function extendBinding(c, tag, tuple, values) {
   for (let index = 0; index < values.length; index++) {
@@ -174,7 +177,7 @@ function* joinBindings(js, cs, { tag, tuples, terms }) {
   }
 }
 
-function evalQuery(db, js, query, context = [{ binding: {}, used: [] }]) {
+function evalQuery(db, js, query, context = [emptyBinding()]) {
   return query
     .map((pattern) => {
       assert(Array.isArray(pattern) && pattern.length === 2);
@@ -375,4 +378,5 @@ export {
   valEqual,
   evalTerm,
   freshId,
+  emptyBinding,
 };

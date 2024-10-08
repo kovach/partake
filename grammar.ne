@@ -95,12 +95,16 @@ program -> (_ rule _):* {% (d) => d[0].map((r) => r[1]) %}
 # whitespace
 _ -> null | _ [\s] {% function() {} %}
 __ -> [\s] | __ [\s] {% function() {} %}
+comma -> _ "," _ {% () => null %}
 
 # new syntax
 
 event_expr -> "." {% (d) => ({ tag: "done"}) %}
 event_expr -> identifier {% (d) => ({ tag: "literal", name: d[0]}) %}
 event_expr -> "(" _ event_expr _ ")" {% (d) => d[2] %}
-event_expr -> event_expr _ "," _ event_expr  {% (d) => ({ tag: "concurrent", a: d[0], b: d[4]}) %}
+event_expr -> event_expr comma event_expr  {% (d) => ({ tag: "concurrent", a: d[0], b: d[2]}) %}
 event_expr -> event_expr _ "->" _ event_expr  {% (d) => ({ tag: "sequence", a: d[0], b: d[4]}) %}
 event_expr -> "[" _ event_expr _ "|" "]" {% (d) => ({ tag: "with-tuples", body: d[2], tuples: {}}) %}
+
+episode_expr -> "do" _ event_expr {% (d) => ({tag: "do", value: d[2]}) %}
+episode_expr -> relation comma episode_expr {% (d) => ({ tag: "observation", pattern: d[0], rest: d[2] }) %}
