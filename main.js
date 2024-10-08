@@ -12,6 +12,7 @@ import {
   freshId,
   valEqual,
   emptyBinding,
+  ppQuery,
 } from "./join.js";
 
 import { assert, ArrayMap } from "./collections.js";
@@ -518,8 +519,6 @@ function updateTip({ rules, db, js }, tip) {
   switch (episode.tag) {
     case "observation": {
       let newC = af(evalQuery(db, js, [episode.pattern], context));
-      console.log(str(context));
-      console.log(str(newC));
       return {
         ...tip,
         value: episode.rest,
@@ -561,14 +560,14 @@ function substituteEventExpr(binding, expr) {
     }
   }
 }
-function makeTip(expr) {
+function mkTip(expr) {
   return { id: freshId(), tag: "tip", value: expr, context: [emptyBinding()] };
 }
 function makeEventByName(rules, name) {
   let now = rules.defs.get(name);
   let after = rules.triggers.get(name);
-  let node = mkCompositeEvent({ name, value: now.map(makeTip) });
-  node.next = () => mkCompositeEvent({ name: `${name}'`, value: after.map(makeTip) });
+  let node = mkCompositeEvent({ name, value: now.map(mkTip) });
+  node.next = () => mkCompositeEvent({ name: `${name}'`, value: after.map(mkTip) });
   return node;
 }
 
@@ -670,12 +669,64 @@ function renderButton(content, context, action, parent) {
   e.onclick = action;
 }
 
+function ppEvent(expr) {
+  switch (expr.tag) {
+    case "done": {
+      return "done";
+    }
+    case "literal": {
+      return `${expr.name}`;
+    }
+    case "concurrent": {
+      let { a, b } = expr;
+      return `(${ppEvent(a)}, ${ppEvent(b)})`;
+    }
+    case "sequence": {
+      let { a, b } = expr;
+      return `(${ppEvent(a)} -> ${ppEvent(b)})`;
+    }
+    case "with-tuples": {
+      let { tuples, body } = expr;
+      return `[${ppEvent(expr.body)} |...]`;
+    }
+  }
+}
+function ppTip(tip) {
+  return `${ppEpisode(tip.value)} | ${tip.context
+    .map((b) => ppBinding(b.binding))
+    .join("; ")}`;
+}
+function ppEpisode(e) {
+  switch (e.tag) {
+    case "observation": {
+      return `${ppQuery([e.pattern])}, ${ppEpisode(e.rest)}`;
+    }
+    case "do": {
+      return `do ${ppEvent(e.value)}`;
+    }
+    default:
+      throw "asdf";
+  }
+}
+
 function newMain() {
   let pe = parseNonterminal[ap]("episode_expr");
   let e = toTag(pe); // ([str]) => pe(str);
 
+  let programText = `
+
+game: [turn | spirit S, land L1, land L2].
+
+turn: spirit S, do grow.
+turn: land L, do defend.
+turn -> do turn.
+
+do turn.
+
+`;
+
   let defs = new ArrayMap([
-    ["turn", [e`p X, do grow`, e`do defend`]],
+    ["turn", [e`spirit S, do grow`, e`land L, do defend`]],
     ["grow", [e`do .`]],
     ["defend", [e`do .`]],
   ]);
@@ -695,11 +746,11 @@ function newMain() {
   let ev, options;
   let rules = { defs, triggers };
   let db = emptyDb();
-  dbAddTuple(db, "p", [freshId()], +1);
-  dbAddTuple(db, "p", [freshId()], +1);
-  dbAddTuple(db, "q", [freshId()], +1);
+  dbAddTuple(db, "land", [freshId()], +1);
+  dbAddTuple(db, "land", [freshId()], +1);
+  dbAddTuple(db, "spirit", [freshId()], +1);
   let program = { rules, db, js: {} };
-  ev = makeTip(e`do turn`);
+  ev = mkTip(e`do turn`);
 
   let app;
   function updateUI() {
@@ -709,7 +760,8 @@ function newMain() {
     app = d.createChildId("div", "left");
     options.forEach((o) =>
       renderButton(
-        str(o),
+        //str(o),
+        ppTip(o),
         [],
         () => {
           console.log("click: ", o);
@@ -726,6 +778,7 @@ function newMain() {
 window.onload = newMain;
 
 /* todo now
+parse program
 observation
   multi-level db, fix substitute
 choice

@@ -256,8 +256,17 @@ function* selectPattern(db, p) {
 const joinsWeighted = (db, ps, init = [{}, 1]) =>
   ps.map((p) => selectPattern(db, p)).reduce(join, [init]);
 
+function ppTerm(term) {
+  switch (term.tag) {
+    case "var": {
+      return term.value;
+    }
+    default:
+      throw "todo";
+  }
+}
 const ppQuery = (ps) => {
-  return ps.map(([tag, vs]) => [tag].concat(vs).join(" ")).join(", ");
+  return ps.map(([tag, vs]) => [tag].concat(vs.map(ppTerm)).join(" ")).join(", ");
 };
 
 // x := f
@@ -379,4 +388,5 @@ export {
   evalTerm,
   freshId,
   emptyBinding,
+  ppQuery,
 };
