@@ -1,13 +1,11 @@
-function assert(cond, msg) {
-  if (!cond) throw new Error(msg);
-}
+import { assert } from "./collections.js";
 
 function getId(id) {
   return document.getElementById(id);
 }
-function create(type) {
+function create(type, ...children) {
   let e = document.createElement(type);
-  childParent(e, getId("body"));
+  children.forEach((c) => e.appendChild(c));
   return e;
 }
 function remove(child) {
@@ -26,11 +24,6 @@ function createChild(type, parent) {
 function createChildId(type, id) {
   return createChild(type, getId(id));
 }
-function createElement(tag, id) {
-  let e = create(tag);
-  e.id = id;
-  return e;
-}
 function* allChildren(node) {
   yield node;
   for (let child of node.children) {
@@ -38,6 +31,96 @@ function* allChildren(node) {
       yield e;
     }
   }
+}
+function createText(str) {
+  let e = create("pre");
+  e.innerHTML = str;
+  return e;
+}
+
+function createSpace() {
+  let e = create("pre");
+  e.style.height = "1em";
+  return e;
+}
+
+function flex(orientiation, ...children) {
+  let e = create("div");
+  e.style.display = "flex";
+  e.style["flex-direction"] = orientiation;
+  children.forEach((c) => childParent(c, e));
+  return e;
+}
+
+function renderJSON(json) {
+  switch (jsonType(json)) {
+    case "array":
+      return renderArray(json);
+    case "object":
+      return renderObj(json);
+    case "string":
+      return createText(JSON.stringify(json));
+    case "number":
+      return createText(json);
+  }
+}
+function jsonType(x) {
+  if (Array.isArray(x)) return "array";
+  if (typeof x === "string") return "string";
+  if (typeof x === "number") return "number";
+  return "object";
+}
+
+function renderArray(arr, orientation = null) {
+  orientation = orientation || (arr.length > 5 ? "column" : "row");
+  arr = arr.map((el) => renderJSON(el));
+  arr = between(arr, () => createText(", "));
+  return flex(orientation, createText("["), ...arr, createText("]"));
+}
+function withClass(e, name) {
+  e.classList.add(name);
+  return e;
+}
+function renderObj(obj) {
+  if (JSON.stringify(obj).length < 40) {
+    return flex(
+      "row",
+      withClass(createText("{"), "fix"),
+      ...between(
+        Object.keys(obj).map((k) => renderKeyVal(k, obj[k])),
+        () => createText(", ")
+      ),
+      withClass(createText("}"), "fix")
+    );
+  }
+  return flex(
+    "row",
+    flex(
+      "column",
+      withClass(createText("{"), "fix"),
+      withClass(createText(""), "grow"),
+      withClass(createText("}"), "fix")
+    ),
+    flex(
+      "column",
+      createSpace(),
+      ...Object.keys(obj).map((k) => renderKeyVal(k, obj[k])),
+      createText(",")
+    )
+  );
+}
+function renderKeyVal(key, val) {
+  let e = flex("row", createText(key + ":"), renderJSON(val));
+  return e;
+}
+
+function between(arr, sep) {
+  let result = [];
+  arr.forEach((e, i) => {
+    result.push(e);
+    if (i < arr.length - 1) result.push(sep());
+  });
+  return result;
 }
 
 class SVGHelp {
@@ -87,6 +170,9 @@ export {
   childParent,
   createChild,
   createChildId,
-  createElement,
   allChildren,
+  createText,
+  renderJSON,
+  flex,
+  withClass,
 };

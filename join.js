@@ -186,7 +186,7 @@ function evalQuery(db, js, query, context = [emptyBinding()]) {
       let [tag, terms] = pattern;
       return { tag, terms, tuples: iterRelTuples(db, tag) };
     })
-    .reduce((a, b) => joinBindings(js, a, b), context);
+    .reduce((context, b) => joinBindings(js, context, b), context);
 }
 
 function valEqual(a, b) {
@@ -260,9 +260,12 @@ const joinsWeighted = (db, ps, init = [{}, 1]) =>
 
 function ppTerm(term) {
   switch (term.tag) {
-    case "var": {
+    case "var":
       return term.value;
-    }
+    case "sym":
+      return `'${term.value}`;
+    case "int":
+      return `${term.value}`;
     default:
       throw "todo";
   }
@@ -391,4 +394,5 @@ export {
   freshId,
   emptyBinding,
   ppQuery,
+  ppTerm,
 };

@@ -36,7 +36,7 @@ pureQuery -> relation _ "," _ pureQuery {% (d) => [d[0]].concat(d[4]) %}
 operation -> relation {% (d) => { return [{ tag: "rel", pattern: d[0] }] } %}
 operation -> fnCall {% (d) => ([{ tag: "call", value:  d[0] }]) %}
 # (TODO: other quantifiers)
-operation -> "choose" _ "[exactly 1]" _ "(" _ pureQuery _ ")"
+operation -> "choose" _ "[1]" _ "(" _ pureQuery _ ")"
   {% (d) => {
     return [
         {tag: 'subQuery', name: '_choices', body: d[6] },
@@ -102,8 +102,12 @@ episode_expr -> relation comma episode_expr {% (d) => ({ tag: "observation", pat
 # todo: X> and >X.
 episode_expr -> op pureQuery cp _ ">" _ op pureQuery cp comma episode_expr
   {% (d) => ({ tag: "modification", before: d[1], after: d[7], rest: d[10] }) %}
-episode_expr -> identifier __ "chooses" __ quantifier __ "?(" _ pureQuery cp
-  {% (d) => ({ tag: "choice", actor: d[0], query: d[9], quantifier: d[4] }) %}
+episode_expr -> identifier __ "chooses" __ quantifier __ "?(" _ pureQuery cp comma episode_expr
+  {% (d) => ({
+      tag: "subquery", query: d[8], name: '_choices', rest:
+    { tag: "choose", actor: d[0], quantifier: d[4], rest: d[11] }})
+
+     %}
 
 rule_separator -> _ ":" _ {% () => 'def' %}
 rule_separator -> _ "->" _ {% () => 'trigger' %}
