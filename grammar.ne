@@ -24,7 +24,7 @@ term -> [0-9]:+ {% (d) => ({tag: 'int', value: parseInt(d[0].join(""))}) %}
 term -> fnCall {% id %}
 
 # pred2 x y -> ["pred", ["x", "y"]]
-relation -> predicate (__ term):* {% (d) => {return [d[0], d[1].map(t => t[1])]} %}
+relation -> predicate (__ term):* {% (d) => {return {tag: d[0], terms: d[1].map(t => t[1])}} %}
 
 # , | ;
 # p2 x y, p1 z, foo
@@ -95,12 +95,11 @@ event_expr -> event_expr comma event_expr  {% (d) => ({ tag: "concurrent", a: d[
 event_expr -> event_expr _ "->" _ event_expr  {% (d) => ({ tag: "sequence", a: d[0], b: d[4]}) %}
 event_expr -> "[" _ event_expr _ "|" _ pureQuery _ "]" {% (d) => ({ tag: "with-tuples", body: d[2], tuples: d[6]}) %}
 
-quantifier -> number {% id %}
 episode_expr -> "done" {% (d) => ({tag: "done"}) %}
 episode_expr -> "do" __ event_expr {% (d) => ({tag: "do", value: d[2]}) %}
 episode_expr -> relation comma episode_expr {% (d) => ({ tag: "observation", pattern: d[0], rest: d[2] }) %}
 # todo: X> and >X.
-episode_expr -> op pureQuery cp _ ">" _ op pureQuery cp comma episode_expr
+episode_expr -> op pureQuery cp _ "!" _ op pureQuery cp comma episode_expr
   {% (d) => ({ tag: "modification", before: d[1], after: d[7], rest: d[10] }) %}
 episode_expr -> identifier __ "chooses" __ quantifier __ "?(" _ pureQuery cp comma episode_expr
   {% (d) => ({
@@ -108,6 +107,8 @@ episode_expr -> identifier __ "chooses" __ quantifier __ "?(" _ pureQuery cp com
     { tag: "choose", actor: d[0], quantifier: d[4], rest: d[11] }})
 
      %}
+
+quantifier -> number {% id %}
 
 rule_separator -> _ ":" _ {% () => 'def' %}
 rule_separator -> _ "->" _ {% () => 'trigger' %}

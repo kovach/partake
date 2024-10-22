@@ -1,4 +1,6 @@
-import { assert } from "./collections.js";
+import { assert, ArrayMap } from "./collections.js";
+import { Binding } from "./binding.js";
+
 const str = (e) => JSON.stringify(e, null, 2);
 const pp = (x) => console.log(str(x));
 const compose = (f, g) => (x) => f(g(x));
@@ -148,32 +150,38 @@ function evalTerm(js, binding, term) {
       return term;
     }
   }
-  if (term.value in binding) return binding[term.value];
+  let maybeValue = binding.get(term.value);
+  if (maybeValue !== undefined) return maybeValue;
   return term;
 }
 
 function emptyBinding() {
-  return { binding: {}, used: [] };
+  return new Binding();
 }
+
 // todo profile
-function extendBinding(c, tag, tuple, values) {
+function extendBinding(c, tag, tuple, values, modifiers) {
   for (let index = 0; index < values.length; index++) {
     let term = values[index];
     if (isLiteral(term) && !valEqual(term, tuple[index])) return false;
   }
-  c = structuredClone(c);
+  c = c.clone();
   for (let index = 0; index < values.length; index++) {
     let term = values[index];
-    if (isVar(term)) c.binding[term.value] = tuple[index];
+    if (isVar(term)) c.set(term.value, tuple[index]);
   }
-  c.used.push([tag, tuple]);
+  let fact = [tag, tuple];
+  modifiers.forEach((mod) => {
+    c.notes.add(mod, fact);
+  });
+  c.notes.add("used", fact);
   return c;
 }
-function* joinBindings(js, cs, { tag, tuples, terms }) {
+function* joinBindings(js, cs, { pattern: { tag, terms, modifiers }, tuples }) {
   for (let c of cs) {
-    let values = terms.map((t) => evalTerm(js, c.binding, t));
+    let values = terms.map((t) => evalTerm(js, c, t));
     for (let tuple of tuples) {
-      let newC = extendBinding(c, tag, tuple, values);
+      let newC = extendBinding(c, tag, tuple, values, modifiers || []);
       if (newC !== false) yield newC;
     }
   }
@@ -182,9 +190,9 @@ function* joinBindings(js, cs, { tag, tuples, terms }) {
 function evalQuery(db, js, query, context = [emptyBinding()]) {
   return query
     .map((pattern) => {
-      assert(Array.isArray(pattern) && pattern.length === 2);
-      let [tag, terms] = pattern;
-      return { tag, terms, tuples: iterRelTuples(db, tag) };
+      assert(pattern.tag && pattern.terms);
+      //assert(Array.isArray(pattern) && pattern.length === 2);
+      return { pattern, tuples: iterRelTuples(db, pattern.tag) };
     })
     .reduce((context, b) => joinBindings(js, context, b), context);
 }
@@ -199,65 +207,6 @@ function valEqual(a, b) {
   }
 }
 
-function joinTuples(t, s) {
-  t = structuredClone(t);
-  for (let key in s) {
-    if (key in t) {
-      if (!valEqual(t[key], s[key])) return false;
-    } else t[key] = s[key];
-  }
-  return t;
-}
-
-function joinWeightedTuples(t_, s_) {
-  let [t, tv] = t_;
-  t = structuredClone(t);
-  let [s, sv] = s_;
-  // in!
-  for (let key in s) {
-    if (key in t) {
-      if (t[key] != s[key]) return false;
-    } else t[key] = s[key];
-  }
-  return [t, tv * sv];
-}
-
-// b *must* be re-startable
-function* join(a, b) {
-  for (let t1 of a) {
-    for (let t2 of b) {
-      let t = joinWeightedTuples(t1, t2);
-      if (t !== false) yield t;
-    }
-  }
-}
-
-// todo: only works on numerically indexed tuples
-function rename(tuple, names) {
-  let result = {};
-  let i = 0;
-  for (let name of names) {
-    if (name[0] === "`" || name[0] === "'") {
-      if (tuple[i] !== name.slice(1)) return false;
-    } else {
-      if ((name in result && result[name] !== tuple[i]) || !(i in tuple)) return false;
-      result[name] = tuple[i];
-    }
-    i++;
-  }
-  return result;
-}
-
-function* selectPattern(db, p) {
-  for (let [tuple, count] of iterRel(db, p[0])) {
-    let t = rename(tuple, p[1]);
-    if (t !== false) yield [t, count];
-  }
-}
-
-const joinsWeighted = (db, ps, init = [{}, 1]) =>
-  ps.map((p) => selectPattern(db, p)).reduce(join, [init]);
-
 function ppTerm(term) {
   switch (term.tag) {
     case "var":
@@ -271,116 +220,34 @@ function ppTerm(term) {
   }
 }
 const ppQuery = (ps) => {
-  return ps.map(([tag, vs]) => [tag].concat(vs.map(ppTerm)).join(" ")).join(", ");
+  return ps.map(({ tag, terms }) => [tag].concat(terms.map(ppTerm)).join(" ")).join(", ");
 };
-
-// x := f
-function parseFnApp(tokens) {
-  if (tokens.length >= 3 && tokens[1] === ":=") {
-    return [tokens[0], tokens[2], tokens.slice(3)];
-  }
-  return false;
-}
-
-function parseAtom(tokens) {
-  if (tokens.length > 0) {
-    return [tokens[0], tokens.slice(1)];
-  }
-  return false;
-}
-function parseClause(tokens) {
-  return parseFnApp(tokens) || parseAtom(tokens);
-}
-
-function parseQuery(str) {
-  // 'f a b, g b c'
-  if (str.trim() === "") return [];
-  return str.split(",").map((w) => {
-    // ['f', 'a', 'b']
-    let tokens = w
-      .trim()
-      .split(" ")
-      .filter((w) => w.length > 0);
-    // ['f', ['a', 'b']]
-    return parseClause(tokens);
-  });
-}
 
 let globalIdCounter = 0;
 function freshId() {
   return { tag: "sym", value: globalIdCounter++ };
 }
 
-function unrename(js, tuple, terms) {
+function unrename(js, binding, terms) {
   return terms.map((term) => {
-    if (isLiteral(term)) return evalTerm(js, tuple, term);
+    if (isLiteral(term)) return evalTerm(js, binding, term);
     else {
       assert(isVar(term));
       let v = term.value;
-      if (v in tuple) return tuple[v];
+      let maybeV = binding.get(v);
+      if (maybeV) return maybeV;
       else {
         let id = freshId();
-        tuple[v] = id;
+        binding.set(v, id);
         return id;
       }
     }
   });
 }
 
-function evalRule(db, { query, output }) {
-  let bindings = joinsWeighted(db, query);
-  for (let tuple of bindings) {
-    for (let pattern of output) {
-      emit(world, pattern[0], unrename(tuple, pattern[1]));
-    }
-  }
-}
-
-function parseRule(str) {
-  let [query, output] = str.split("->").map(parseQuery);
-  return { query, output };
-}
-
-function specialRelationHandlerUndo(tag, args) {
-  let msg = (name, expected) =>
-    `special relation '${name}' takes (${expected.join(",")}) but saw: (${args})`;
-  if (tag === "create") {
-    assert(args.length === 2, msg("create", ["element-type", "id"]));
-    // remove
-    getId(args[1]).remove();
-  } else if (tag === "style") {
-    assert(args.length === 3, msg("style", ["id", "css-prop", "value"]));
-    //no-op?
-  } else if (tag === "parent") {
-    assert(args.length === 2, msg("parent", ["id", "id"]));
-    //no-op?
-  } else if (tag === "inner") {
-    assert(args.length === 2, msg("inner", ["id", "content"]));
-    //no-op?
-  }
-}
-function specialRelationHandler(tag, args) {
-  let msg = (name, expected) =>
-    `special relation '${name}' takes (${expected.join(",")}) but saw: (${args})`;
-  if (tag === "create") {
-    assert(args.length === 2, msg("create", ["element-type", "id"]));
-    createElement(args[0], args[1]);
-  } else if (tag === "style") {
-    assert(args.length === 3, msg("style", ["id", "css-prop", "value"]));
-    getId(args[0]).style[args[1]] = args[2];
-  } else if (tag === "parent") {
-    assert(args.length === 2, msg("parent", ["id", "id"]));
-    childParent(getId(args[0]), getId(args[1]));
-  } else if (tag === "inner") {
-    assert(args.length === 2, msg("inner", ["id", "content"]));
-    getId(args[0]).innerHTML = args[1];
-  }
-}
-
 export {
   unrename,
   dbOfList,
-  parseQuery,
   dbAddTuple,
   af,
   str,

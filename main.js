@@ -4,11 +4,9 @@ import {
   dbAddTuple,
   af,
   str,
-  clone,
   emptyDb,
   dbContains,
   evalQuery,
-  evalTerm,
   freshId,
   valEqual,
   emptyBinding,
@@ -64,8 +62,8 @@ function parseNonterminal(nt, text) {
   return result[0];
 }
 function makeTuple(js, binding, pattern) {
-  let [tag, atoms] = pattern;
-  return [tag, unrename(js, binding, atoms)];
+  let { tag, terms } = pattern;
+  return [tag, unrename(js, binding, terms)];
 }
 
 function ppTuple(tag, tuple) {
@@ -75,8 +73,8 @@ function ppTuple(tag, tuple) {
 }
 function ppBinding(binding) {
   let pairs = [];
-  for (let key in binding) {
-    if (key[0] !== "_") pairs.push(`${key}: ${ppTerm(binding[key])}`);
+  for (let key of binding) {
+    if (key[0] !== "_") pairs.push(`${key}: ${ppTerm(binding.get(key))}`);
   }
   return `{${pairs.join(", ")}}`;
 }
@@ -130,7 +128,7 @@ function updateTip({ rules, js }, data, tip, path) {
       let { query, name, rest } = episode;
       let db = dbOfPath(path);
       for (let c of context) {
-        c.binding[name] = af(evalQuery(db, js, query, [c]));
+        c.set(name, af(evalQuery(db, js, query, [c])));
       }
       return {
         ...tip,
@@ -183,7 +181,7 @@ function substituteEventExpr(js, binding, expr) {
     case "with-tuples": {
       let { tuples, body } = expr;
       // may update binding:
-      tuples = tuples.map((t) => makeTuple(js, binding.binding, t));
+      tuples = tuples.map((t) => makeTuple(js, binding, t));
       return { ...expr, tuples, body: recurse(body) };
     }
   }
@@ -312,16 +310,15 @@ function updateEvent(root, path, id, fn) {
 function renderButton(content, { enter, exit, action, context }) {
   let e = d.create("div");
   e.innerHTML = content;
-  e.onmouseenter = () => {
-    e.classList.add("hl");
+  e = withMouseHighlight(e);
+  e.addEventListener("mouseenter", () => {
     if (enter) enter();
     if (context) context.forEach((e) => e.classList.add("hl"));
-  };
-  e.onmouseleave = () => {
-    e.classList.remove("hl");
+  });
+  e.addEventListener("mouseleave", () => {
     if (exit) exit();
     if (context) context.forEach((e) => e.classList.remove("hl"));
-  };
+  });
   e.onclick = action;
   return e;
 }
@@ -343,7 +340,7 @@ function renderEpisode(root, ep) {
       return createEpisodeElem(ep.name, ep.value.map(renderEpisode[ap](root)));
     }
     case "tip": {
-      return d.withClass(renderTip(root, ep), "margin");
+      return d.withClass(renderTip(root, ep), "margin", "episode");
     }
     default:
       throw "";
@@ -359,8 +356,8 @@ function renderTip({ action }, tip) {
       for (let c of context) {
         e.appendChild(
           renderChoices(
-            (b) => d.createText(ppBinding(b.binding)),
-            c.binding["_choices"],
+            (b) => d.createText(ppBinding(b)),
+            c.get("_choices"),
             (set) => {
               sets.set(c, set);
               // join after all choices made
@@ -382,9 +379,7 @@ function renderTip({ action }, tip) {
 }
 
 function ppTip(tip) {
-  return `${ppEpisode(tip.episode)} | ${tip.context
-    .map((b) => ppBinding(b.binding))
-    .join("; ")}`;
+  return `${ppEpisode(tip.episode)} | ${tip.context.map(ppBinding).join("; ")}`;
 }
 function ppEpisode(e) {
   switch (e.tag) {
@@ -477,17 +472,16 @@ function newMain() {
 game: do [turn | land a, land b, spirit c,
   card x, cost x 1, green x 1, red x 1,
   card y, cost y 2, blue y 2, red y 1
-  ].
+].
 turn: spirit S, do [grow | the-spirit S].
 turn: land L, do [defend | the-land L].
-grow: the-spirit S,
-  S chooses 1 ?(card c), done.
+grow: the-spirit S, S chooses 1 ?(card C), cost C Cost, done.
 defend: the-land L, done.
 turn -> do turn.
 `;
 
   let programText2 = `
-game: do [turn | land a, land b, spirit c,
+game: do [turn | land a, land b, spirit s,
   card x, cost x 1, green x 1, red x 1,
   card y, cost y 2, blue y 2, red y 1
   ].
@@ -537,16 +531,6 @@ function renderChoices(renderer, set, k) {
   return renderSubsetSelector(m, () => true, k);
 }
 
-function withMouseHighlight(elem) {
-  elem.onmouseenter = () => {
-    elem.classList.add("hl");
-  };
-  elem.onmouseleave = () => {
-    elem.classList.remove("hl");
-  };
-  return elem;
-}
-
 // map from object to element
 // render elements
 function renderSubsetSelector(map, hasValidExtension, k) {
@@ -555,6 +539,7 @@ function renderSubsetSelector(map, hasValidExtension, k) {
   for (let [term, elem] of map) {
     d.childParent(elem, e);
     elem = withMouseHighlight(elem);
+    elem.classList.add("episode");
     elem.onclick = () => {
       if (chosen.has(term)) {
         chosen.delete(term);
@@ -580,6 +565,16 @@ function renderSubsetSelector(map, hasValidExtension, k) {
   return e;
 }
 
+function withMouseHighlight(elem) {
+  elem.addEventListener("mouseenter", () => {
+    elem.classList.add("hl");
+  });
+  elem.addEventListener("mouseleave", () => {
+    elem.classList.remove("hl");
+  });
+  return elem;
+}
+
 /* todo now
 before/after
   new binding class
@@ -590,6 +585,7 @@ choice
 actors
   player, default, random
 count. not, comparisons
+fix "turn'" nesting
 
 ? draw episodes in progress
 */

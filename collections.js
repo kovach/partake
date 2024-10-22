@@ -2,6 +2,14 @@ function assert(cond, msg) {
   if (!cond) throw new Error(msg);
 }
 
+Map.prototype.map = function (f) {
+  let m = new Map();
+  for (let [key, val] of this.entries()) {
+    m.set(key, f(val));
+  }
+  return m;
+};
+
 class MonoidMap {
   constructor(zero, plus, values) {
     this.map = new Map(values);

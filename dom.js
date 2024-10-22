@@ -1,4 +1,5 @@
-import { assert } from "./collections.js";
+import { assert, ArrayMap } from "./collections.js";
+import { Binding } from "./binding.js";
 
 function getId(id) {
   return document.getElementById(id);
@@ -58,6 +59,10 @@ function renderJSON(json) {
       return renderArray(json);
     case "object":
       return renderObj(json);
+    case "map":
+      return renderObj(Object.fromEntries(json.map));
+    case "binding":
+      return createText("todo: renderJSON(binding)");
     case "string":
       return createText(JSON.stringify(json));
     case "number":
@@ -68,6 +73,8 @@ function jsonType(x) {
   if (Array.isArray(x)) return "array";
   if (typeof x === "string") return "string";
   if (typeof x === "number") return "number";
+  if (x instanceof Map || x instanceof ArrayMap) return "map";
+  if (x instanceof Binding) return "binding";
   return "object";
 }
 
@@ -77,8 +84,8 @@ function renderArray(arr, orientation = null) {
   arr = between(arr, () => createText(", "));
   return flex(orientation, createText("["), ...arr, createText("]"));
 }
-function withClass(e, name) {
-  e.classList.add(name);
+function withClass(e, ...names) {
+  names.forEach((name) => e.classList.add(name));
   return e;
 }
 function renderObj(obj) {
