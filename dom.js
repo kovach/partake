@@ -62,7 +62,10 @@ function renderJSON(json) {
     case "map":
       return renderObj(Object.fromEntries(json.map));
     case "binding":
-      return createText("todo: renderJSON(binding)");
+      return renderObj({
+        substitution: Object.fromEntries(json.substitution),
+        notes: Object.fromEntries(json.notes.map),
+      });
     case "string":
       return createText(JSON.stringify(json));
     case "number":

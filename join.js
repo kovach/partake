@@ -63,8 +63,8 @@ function relAddTuple(rel, tuple, count = 1) {
 function dbGet(db, tag, tuple) {
   return getKey(selectRel(db, tag), key(tuple));
 }
+// mutates left arg
 function relAddRel(rel1, rel2) {
-  // mutates left arg
   for (let [k, v] of rel2.entries()) {
     relAddTupleWithKey(rel1, k, v[0], v[1]);
   }
@@ -75,8 +75,8 @@ function dbContains(db, tag, tuple) {
 function dbAddTuple(db, tag, tuple, count = 1) {
   relAddTuple(selectRel(db, tag), tuple, count);
 }
+// mutates left arg
 function dbAddDb(db1, db2) {
-  // mutates left arg
   for (let [tag, rel] of db2.entries()) {
     relAddRel(selectRel(db1, tag), rel);
   }
@@ -262,4 +262,7 @@ export {
   emptyBinding,
   ppQuery,
   ppTerm,
+  dbAddDb,
+  addDbs,
+  printDb,
 };

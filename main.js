@@ -12,6 +12,8 @@ import {
   emptyBinding,
   ppQuery,
   ppTerm,
+  addDbs,
+  printDb,
 } from "./join.js";
 
 import { assert, ArrayMap } from "./collections.js";
@@ -103,64 +105,6 @@ function renderDb(db, parentId, previous) {
   }
 }
 
-function dbOfPath(path) {
-  let db = dbOfList([].concat(...path[mapMaybe]((node) => node.tuples)));
-  return db;
-}
-function updateTipById(program, root, id, data) {
-  return updateEvent(root, [], id, updateTip[ap](program, data));
-  //return updateEvent(root, [], id, updateTip[ap](program)[ap](data));
-}
-function updateTip({ rules, js }, data, tip, path) {
-  let { episode, context } = tip;
-  //renderDb(db, "right");
-  switch (episode.tag) {
-    case "observation": {
-      let db = dbOfPath(path);
-      context = af(evalQuery(db, js, [episode.pattern], context));
-      return {
-        ...tip,
-        episode: episode.rest,
-        context,
-      };
-    }
-    case "subquery": {
-      let { query, name, rest } = episode;
-      let db = dbOfPath(path);
-      for (let c of context) {
-        c.set(name, af(evalQuery(db, js, query, [c])));
-      }
-      return {
-        ...tip,
-        episode: rest,
-        context,
-      };
-    }
-    case "choose": {
-      let { rest } = episode;
-      return {
-        ...tip,
-        episode: rest,
-        context: data,
-      };
-    }
-    case "do": {
-      //assert(episode.name);
-      return mkCompositeEvent({
-        //name: "do",
-        value: context.map((binding) =>
-          beginEvent(rules, substituteEventExpr(js, binding, episode.value))
-        ),
-      });
-    }
-    case "done": {
-      return mkCompositeEvent({ value: [] });
-    }
-    default:
-      throw "";
-  }
-}
-
 function substituteEventExpr(js, binding, expr) {
   let recurse = substituteEventExpr[ap](js)[ap](binding);
   switch (expr.tag) {
@@ -239,6 +183,90 @@ function beginEvent(rules, expr) {
   }
 }
 
+function updatePathDb(db, context) {
+  console.log("before", printDb(db));
+  context.forEach((c) => {
+    c.notes.get("delete").forEach(([tag, tuple]) => dbAddTuple(db, tag, tuple, -1));
+    c.notes.get("add").forEach(([tag, tuple]) => dbAddTuple(db, tag, tuple, +1));
+  });
+  console.log("after", printDb(db));
+}
+
+function updateTip({ db, rules, js }, data, tip, path) {
+  function dbOfPath(path) {
+    return addDbs([db, dbOfList([].concat(...path[mapMaybe]((node) => node.tuples)))]);
+  }
+  let { episode, context } = tip;
+  //renderDb(db, "right");
+  switch (episode.tag) {
+    case "observation": {
+      let db = dbOfPath(path);
+      context = af(evalQuery(db, js, [episode.pattern], context));
+      return {
+        ...tip,
+        episode: episode.rest,
+        context,
+      };
+    }
+    case "modification": {
+      let { before, after, rest } = episode;
+      before = before.map((pattern) => ({ ...pattern, modifiers: ["delete"] }));
+      //if (before.length > 0) throw "";
+      context = af(evalQuery(db, js, before, context));
+      // may modify c!
+      context.forEach((c) => {
+        after.forEach((pattern) => {
+          c.notes.add("add", makeTuple(js, c, pattern));
+        });
+      });
+      return {
+        ...tip,
+        episode: rest,
+        context,
+      };
+    }
+    case "subquery": {
+      let { query, name, rest } = episode;
+      let db = dbOfPath(path);
+      for (let c of context) {
+        c.set(name, af(evalQuery(db, js, query, [c])));
+      }
+      return {
+        ...tip,
+        episode: rest,
+        context,
+      };
+    }
+    case "choose": {
+      let { rest } = episode;
+      return {
+        ...tip,
+        episode: rest,
+        context: data,
+      };
+    }
+    case "do": {
+      updatePathDb(db, context);
+      return mkCompositeEvent({
+        value: context.map((binding) =>
+          beginEvent(rules, substituteEventExpr(js, binding, episode.value))
+        ),
+      });
+    }
+    case "done": {
+      updatePathDb(db, context);
+      return mkCompositeEvent({ value: [] });
+    }
+    default:
+      throw "";
+  }
+}
+
+function updateTipById(program, root, id, data) {
+  return updateEvent(root, [], id, updateTip[ap](program, data));
+  //return updateEvent(root, [], id, updateTip[ap](program)[ap](data));
+}
+
 function eventCompleted(event) {
   // todo
   return (
@@ -248,10 +276,6 @@ function eventCompleted(event) {
 }
 
 function reduceEvent(event) {
-  let options = [];
-  event = go(event, options);
-  return [event, options];
-
   function go(event, options) {
     //console.log("visit: ", event.id, event.tag);
     switch (event.tag) {
@@ -269,6 +293,10 @@ function reduceEvent(event) {
       return event;
     }
   }
+
+  let options = [];
+  event = go(event, options);
+  return [event, options];
 }
 
 // todo: single traversal function
@@ -378,36 +406,6 @@ function renderTip({ action }, tip) {
   }
 }
 
-function ppTip(tip) {
-  return `${ppEpisode(tip.episode)} | ${tip.context.map(ppBinding).join("; ")}`;
-}
-function ppEpisode(e) {
-  switch (e.tag) {
-    case "observation": {
-      return `${ppQuery([e.pattern])}, ${ppEpisode(e.rest)}`;
-    }
-    case "choose": {
-      let { actor, quantifier, rest } = e;
-      return `${actor} chooses ${quantifier}, ${ppEpisode(rest)}`;
-    }
-    case "do": {
-      return `do ${ppEvent(e.value)}`;
-    }
-    case "done": {
-      return "done";
-    }
-    case "subquery": {
-      let { query, name, rest } = e;
-      return `${name} := ?(${ppQuery(query)}), ${ppEpisode(rest)}`;
-    }
-    case "with-tuples": {
-      return `[${ppEpisode(e.body)} | ${ppQuery(e.tuples)}]`;
-    }
-    default:
-      throw "";
-      return "todo";
-  }
-}
 function ppEvent(expr) {
   switch (expr.tag) {
     case "done": {
@@ -432,6 +430,41 @@ function ppEvent(expr) {
       return `[${ppEvent(body)} | ${tuples} ]`;
     }
   }
+}
+
+function ppEpisode(e) {
+  switch (e.tag) {
+    case "observation": {
+      return `${ppQuery([e.pattern])}, ${ppEpisode(e.rest)}`;
+    }
+    case "choose": {
+      let { actor, quantifier, rest } = e;
+      return `${actor} chooses ${quantifier}, ${ppEpisode(rest)}`;
+    }
+    case "do": {
+      return `do ${ppEvent(e.value)}`;
+    }
+    case "done": {
+      return "done";
+    }
+    case "subquery": {
+      let { query, name, rest } = e;
+      return `${name} := ?(${ppQuery(query)}), ${ppEpisode(rest)}`;
+    }
+    case "with-tuples": {
+      return `[${ppEpisode(e.body)} | ${ppQuery(e.tuples)}]`;
+    }
+    case "modification": {
+      return `(${ppQuery(e.before)}) ! (${ppQuery(e.after)})`;
+    }
+    default:
+      throw "";
+      return "todo";
+  }
+}
+
+function ppTip(tip) {
+  return `${ppEpisode(tip.episode)} | ${tip.context.map(ppBinding).join("; ")}`;
 }
 
 function parseProgram(text) {
@@ -468,11 +501,10 @@ function newMain() {
   let pe = parseNonterminal[ap]("episode_expr");
   let e = toTag(pe); // ([str]) => pe(str);
 
-  let programText = `
-game: do [turn | land a, land b, spirit c,
+  let programText1 = `
+game: () ! (land a, land b, spirit s,
   card x, cost x 1, green x 1, red x 1,
-  card y, cost y 2, blue y 2, red y 1
-].
+  card y, cost y 2, blue y 2, red y 1), do turn.
 turn: spirit S, do [grow | the-spirit S].
 turn: land L, do [defend | the-land L].
 grow: the-spirit S, S chooses 1 ?(card C), cost C Cost, done.
@@ -488,13 +520,26 @@ game: do [turn | land a, land b, spirit s,
 turn: land S, S chooses 1 ?(card C), cost C Cost, done.
 `;
 
+  let programText3 = `
+game: () ! (land a, land b, spirit s,
+  card x, cost x 1, green x 1, red x 1,
+  card y, cost y 2, blue y 2, red y 1), do turn.
+turn: land L, spirit S, done.
+`;
+
+  let programText4 = `
+game: () ! (land a, land b, adjacent a b, adjacent b a, spirit s, located s a), do turn.
+turn: spirit S, (located S L)!(), S chooses 1 ?(adjacent L L'), ()!(located S L'), done.
+turn -> do turn.
+`;
+
   let ev, options;
-  let rules = parseProgram(programText);
+  let rules = parseProgram(programText4);
   let db = emptyDb();
   // todo
-  dbAddTuple(db, "land", [freshId()], +1);
-  dbAddTuple(db, "land", [freshId()], +1);
-  dbAddTuple(db, "spirit", [freshId()], +1);
+  //dbAddTuple(db, "land", [freshId()], +1);
+  //dbAddTuple(db, "land", [freshId()], +1);
+  //dbAddTuple(db, "spirit", [freshId()], +1);
   let program = { rules, db, js: {} };
   ev = mkEventByName(rules, "game");
   //ev = mkTip(e`do game`);
@@ -577,7 +622,6 @@ function withMouseHighlight(elem) {
 
 /* todo now
 before/after
-  new binding class
 basic ui work
   board: visualize entire db
 choice
