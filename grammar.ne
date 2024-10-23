@@ -51,12 +51,25 @@ episode_expr -> relation comma episode_expr {% (d) => ({ tag: "observation", pat
 # todo: X> and >X.
 episode_expr -> op pureQuery cp _ "!" _ op pureQuery cp comma episode_expr
   {% (d) => ({ tag: "modification", before: d[1], after: d[7], rest: d[10] }) %}
-episode_expr -> identifier __ "chooses" __ quantifier __ "?(" _ pureQuery cp comma episode_expr
+episode_expr -> var __ "chooses" __ quantifier __ "?(" _ pureQuery cp comma episode_expr
   {% (d) => ({
+      // todo: use unreachable name
       tag: "subquery", query: d[8], name: '_choices', rest:
-    { tag: "choose", actor: d[0], quantifier: d[4], rest: d[11] }})
+    { tag: "choose", actor: d[0], quantifier: d[4], name: '_choices', rest: d[11] }})
+  %}
+episode_expr -> identifier _ ":=" _ "count" _ "(" _ pureQuery cp comma episode_expr
+  {% (d) => ({
+      tag: "subquery", query: d[8], name: d[0], rest:
+    { tag: "count", name: d[0], rest: d[11] }})
+  %}
+episode_expr -> term _ binOp _ term comma episode_expr
+  {% (d) => ({tag: 'binOp', operator: d[2], l: d[0], r: d[4], rest: d[6]}) %}
 
-     %}
+binOp -> "<=" {% id %}
+binOp -> ">=" {% id %}
+binOp -> "<" {% id %}
+binOp -> ">" {% id %}
+binOp -> "=" {% id %}
 
 quantifier -> number {% id %}
 

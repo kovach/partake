@@ -85,7 +85,7 @@ function dbAddDb(db1, db2) {
 function addDbs(dbs) {
   return dbs.reduce(dbAddDb, emptyDb());
 }
-function clone(db) {
+function cloneDb(db) {
   return dbAddDb(emptyDb(), db);
 }
 
@@ -207,6 +207,19 @@ function valEqual(a, b) {
   }
 }
 
+// term constructors
+function mkInt(value) {
+  return { tag: "int", value };
+}
+function mkVar(value) {
+  return { tag: "var", value };
+}
+function mkSym(value) {
+  return { tag: "sym", value };
+}
+function mkSet(value) {
+  return { tag: "set", value };
+}
 function ppTerm(term) {
   switch (term.tag) {
     case "var":
@@ -215,10 +228,25 @@ function ppTerm(term) {
       return `'${term.value}`;
     case "int":
       return `${term.value}`;
+    case "set":
+      return ppContext(term.value);
     default:
       throw "todo";
   }
 }
+
+function ppBinding(binding) {
+  let pairs = [];
+  for (let key of binding) {
+    if (key[0] !== "_") pairs.push(`${key}: ${ppTerm(binding.get(key))}`);
+  }
+  return `{${pairs.join(", ")}}`;
+}
+
+function ppContext(context) {
+  return `[${context.map(ppBinding).join("; ")}]`;
+}
+
 const ppQuery = (ps) => {
   return ps.map(({ tag, terms }) => [tag].concat(terms.map(ppTerm)).join(" ")).join(", ");
 };
@@ -246,23 +274,28 @@ function unrename(js, binding, terms) {
 }
 
 export {
-  unrename,
-  dbOfList,
-  dbAddTuple,
   af,
   str,
-  clone,
   emptyDb,
+  printDb,
+  dbOfList,
+  dbAddTuple,
+  dbAddDb,
+  addDbs,
   dbContains,
-  evalQuery,
   isLiteral,
   valEqual,
   evalTerm,
-  freshId,
   emptyBinding,
+  evalQuery,
+  freshId,
+  unrename,
   ppQuery,
   ppTerm,
-  dbAddDb,
-  addDbs,
-  printDb,
+  ppBinding,
+  ppContext,
+  mkInt,
+  mkVar,
+  mkSym,
+  mkSet,
 };

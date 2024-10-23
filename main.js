@@ -12,8 +12,12 @@ import {
   emptyBinding,
   ppQuery,
   ppTerm,
+  ppBinding,
+  ppContext,
   addDbs,
   printDb,
+  mkInt,
+  mkSet,
 } from "./join.js";
 
 import { assert, ArrayMap } from "./collections.js";
@@ -72,13 +76,6 @@ function ppTuple(tag, tuple) {
   tuple = tuple.map(ppTerm);
   let tupleText = tuple.join(" ");
   return `(${tag}${tupleText.length > 0 ? " " + tupleText : ""})`;
-}
-function ppBinding(binding) {
-  let pairs = [];
-  for (let key of binding) {
-    if (key[0] !== "_") pairs.push(`${key}: ${ppTerm(binding.get(key))}`);
-  }
-  return `{${pairs.join(", ")}}`;
 }
 
 let app;
@@ -229,7 +226,7 @@ function updateTip({ db, rules, js }, data, tip, path) {
       let { query, name, rest } = episode;
       let db = dbOfPath(path);
       for (let c of context) {
-        c.set(name, af(evalQuery(db, js, query, [c])));
+        c.set(name, mkSet(af(evalQuery(db, js, query, [c]))));
       }
       return {
         ...tip,
@@ -243,6 +240,17 @@ function updateTip({ db, rules, js }, data, tip, path) {
         ...tip,
         episode: rest,
         context: data,
+      };
+    }
+    case "count": {
+      let { rest, name } = episode;
+      context.forEach((c) => {
+        c.set(name, mkInt(c.get(name).value.length));
+      });
+      return {
+        ...tip,
+        episode: rest,
+        context,
       };
     }
     case "do": {
@@ -386,39 +394,6 @@ function ppEvent(expr) {
     }
   }
 }
-
-function _ppEpisode(e) {
-  switch (e.tag) {
-    case "observation": {
-      return `${ppQuery([e.pattern])}, ${ppEpisode(e.rest)}`;
-    }
-    case "choose": {
-      let { actor, quantifier, rest } = e;
-      return `${actor} chooses ${quantifier}, ${ppEpisode(rest)}`;
-    }
-    case "do": {
-      return `do ${ppEvent(e.value)}`;
-    }
-    case "done": {
-      return "done";
-    }
-    case "subquery": {
-      let { query, name, rest } = e;
-      return `${name} := ?(${ppQuery(query)}), ${ppEpisode(rest)}`;
-    }
-    case "with-tuples": {
-      return `[${ppEpisode(e.body)} | ${ppQuery(e.tuples)}]`;
-    }
-    case "modification": {
-      let { before, after, rest } = e;
-      return `(${ppQuery(before)}) ! (${ppQuery(after)}), ${ppEpisode(rest)}`;
-    }
-    default:
-      throw "";
-      return "todo";
-  }
-}
-
 function ppEpisode(e) {
   switch (e.tag) {
     case "observation": {
@@ -427,6 +402,10 @@ function ppEpisode(e) {
     case "choose": {
       let { actor, quantifier, rest } = e;
       return `${actor} chooses ${quantifier}`;
+    }
+    case "count": {
+      let { name, rest } = e;
+      return `${name} := count ${name}, ${ppEpisode(rest)}`;
     }
     case "do": {
       return `do ${ppEvent(e.value)}`;
@@ -450,16 +429,8 @@ function ppEpisode(e) {
   }
 }
 
-function _ppTip(tip) {
-  return `${ppEpisode(tip.episode)} | ${tip.context.map(ppBinding).join("; ")}`;
-}
-
 function ppTip(tip) {
-  return d.flex(
-    "column",
-    d.createText(tip.context.map(ppBinding).join("; ")),
-    ppEpisode(tip.episode)
-  );
+  return d.flex("column", d.createText(ppContext(tip.context)), ppEpisode(tip.episode));
 }
 
 function exprToList(expr) {
@@ -471,22 +442,18 @@ function exprToList(expr) {
   return result;
 }
 
-function flatten(pair) {
-  if (pair === null) return [];
-  return [pair[0]].concat(flatten(pair[1]));
-}
-
 function renderTip({ action }, tip) {
   function renderHead(expr) {
     switch (expr.tag) {
       case "choose":
+        let { actor, quantifier, name } = expr;
         let e = d.create("div");
         let sets = new Map();
         for (let c of context) {
           e.appendChild(
             renderChoices(
               (b) => d.createText(ppBinding(b)),
-              c.get("_choices"),
+              c.get(name).value,
               (set) => {
                 sets.set(c, set);
                 // join after all choices made
@@ -508,8 +475,8 @@ function renderTip({ action }, tip) {
         });
     }
   }
+
   let { episode, context } = tip;
-  let rest = episode.rest || [];
   return d.flex(
     "column",
     d.createText(context.map(ppBinding).join("; ")),
@@ -599,8 +566,8 @@ turn: land L, spirit S, done.
 `;
 
   let programText4 = `
-game: () ! (land a, land b, adjacent a b, adjacent b a, spirit s, located s a), do turn.
-turn: spirit S, (located S L)!(), S chooses 1 ?(adjacent L L'), ()!(located S L'), done.
+game: () ! (land a, land b, land c, adjacent a b, adjacent b a, adjacent a c, adjacent c a, spirit s, spirit t, located s a), do turn.
+turn: Count := count (spirit _), spirit S, located S L, S chooses 1 ?(adjacent L L'), (located S L) ! (located S L'), done.
 turn -> do turn.
 `;
 
@@ -692,11 +659,14 @@ function withMouseHighlight(elem) {
 }
 
 /* todo now
-fix terminology (episode/expr/tip)
+cleanup
+  fix terminology (episode/expr/tip)
 basic ui work
   board: visualize entire db
-choice
-  quantifiers
+quantifiers
+  checks for = and up to
+? `new` operation
+
 actors
   player, default, random
 count. not, comparisons
