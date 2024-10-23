@@ -6,6 +6,7 @@ import {
   str,
   emptyDb,
   dbContains,
+  evalTerm,
   evalQuery,
   freshId,
   valEqual,
@@ -23,13 +24,8 @@ import {
 import { assert, ArrayMap } from "./collections.js";
 
 import * as d from "./dom.js";
-import { s } from "./dom.js";
 
 import grammar from "./grammar.js";
-
-let debugSteps = false;
-let debugResult = false;
-let debugIterTag = true;
 
 let ap = Symbol("partial-apply");
 let mapMaybe = Symbol("mapMaybe");
@@ -193,6 +189,13 @@ function updateTip({ db, rules, js }, data, tip, path) {
   function dbOfPath(path) {
     return addDbs([db, dbOfList([].concat(...path[mapMaybe]((node) => node.tuples)))]);
   }
+  let binaryOperatorFunctions = {
+    "<": (l, r) => l.value < r.value,
+    ">": (l, r) => l.value > r.value,
+    "<=": (l, r) => l.value <= r.value,
+    ">=": (l, r) => l.value >= r.value,
+    "=": (l, r) => (l.value = r.value),
+  };
   let { episode, context } = tip;
   //renderDb(db, "right");
   switch (episode.tag) {
@@ -246,6 +249,20 @@ function updateTip({ db, rules, js }, data, tip, path) {
       let { rest, name } = episode;
       context.forEach((c) => {
         c.set(name, mkInt(c.get(name).value.length));
+      });
+      return {
+        ...tip,
+        episode: rest,
+        context,
+      };
+    }
+    case "binOp": {
+      let { operator, l, r, rest } = episode;
+      let fn = binaryOperatorFunctions[operator];
+      context = context.filter((c) => {
+        let vl = evalTerm(js, c, l);
+        let vr = evalTerm(js, c, r);
+        return fn(vl, vr);
       });
       return {
         ...tip,
@@ -343,6 +360,16 @@ function updateEvent(root, path, id, fn) {
   }
 }
 
+function withMouseHighlight(elem) {
+  elem.addEventListener("mouseenter", () => {
+    elem.classList.add("hl");
+  });
+  elem.addEventListener("mouseleave", () => {
+    elem.classList.remove("hl");
+  });
+  return elem;
+}
+
 function renderButton(content, { enter, exit, action, context }) {
   let e = d.create("div");
   e.appendChild(content);
@@ -421,8 +448,12 @@ function ppEpisode(e) {
       return `[${ppEpisode(e.body)} | ${ppQuery(e.tuples)}]`;
     }
     case "modification": {
-      let { before, after, rest } = e;
+      let { before, after } = e;
       return `(${ppQuery(before)}) ! (${ppQuery(after)})`;
+    }
+    case "binOp": {
+      let { operator, l, r } = e;
+      return `${ppTerm(l)} ${operator} ${ppTerm(r)}`;
     }
     default:
       throw "";
@@ -574,13 +605,8 @@ turn -> do turn.
   let ev, options;
   let rules = parseProgram(programText4);
   let db = emptyDb();
-  // todo
-  //dbAddTuple(db, "land", [freshId()], +1);
-  //dbAddTuple(db, "land", [freshId()], +1);
-  //dbAddTuple(db, "spirit", [freshId()], +1);
   let program = { rules, db, js: {} };
   ev = mkEventByName(rules, "game");
-  //ev = mkTip(e`do game`);
 
   let app;
 
@@ -598,21 +624,10 @@ turn -> do turn.
     d.childParent(d.renderJSON(options), app);
   }
 
-  let log = d.getId("log");
-
-  let x = d.childParent(d.flex("row"), log);
   updateUI();
 }
 
 window.onload = newMain;
-
-function renderChoices(renderer, set, k) {
-  let m = new Map();
-  for (let v of set) {
-    m.set(v, renderer(v));
-  }
-  return renderSubsetSelector(m, () => true, k);
-}
 
 // map from object to element
 // render elements
@@ -648,17 +663,16 @@ function renderSubsetSelector(map, hasValidExtension, k) {
   return e;
 }
 
-function withMouseHighlight(elem) {
-  elem.addEventListener("mouseenter", () => {
-    elem.classList.add("hl");
-  });
-  elem.addEventListener("mouseleave", () => {
-    elem.classList.remove("hl");
-  });
-  return elem;
+function renderChoices(renderer, set, k) {
+  let m = new Map();
+  for (let v of set) {
+    m.set(v, renderer(v));
+  }
+  return renderSubsetSelector(m, () => true, k);
 }
 
 /* todo now
+binop
 cleanup
   fix terminology (episode/expr/tip)
 basic ui work
@@ -669,7 +683,8 @@ quantifiers
 
 actors
   player, default, random
-count. not, comparisons
+count
+  not, comparisons
 fix "turn'" nesting
 
 ? draw episodes in progress
