@@ -41,4 +41,28 @@ class ArrayMap extends MonoidMap {
   }
 }
 
-export { assert, MonoidMap, ArrayMap };
+class DelayedMap {
+  map;
+  callbacks;
+  constructor(values) {
+    this.map = new Map(values);
+    this.callbacks = new ArrayMap();
+  }
+  get(key, fn) {
+    let v = this.map.get(key);
+    if (v === undefined) {
+      this.callbacks.add(key, fn);
+    } else {
+      fn(v);
+    }
+  }
+  set(key, value) {
+    this.map.set(key, value);
+    let v = this.map.get(key);
+    let fns = this.callbacks.get(key);
+    while (fns.length > 0) {
+      fns.pop()(value);
+    }
+  }
+}
+export { assert, MonoidMap, ArrayMap, DelayedMap };

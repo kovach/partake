@@ -19,9 +19,10 @@ import {
   printDb,
   mkInt,
   mkSet,
+  tuplesOfDb,
 } from "./join.js";
 
-import { assert, ArrayMap } from "./collections.js";
+import { assert, ArrayMap, DelayedMap } from "./collections.js";
 
 import * as d from "./dom.js";
 
@@ -177,12 +178,10 @@ function beginEvent(rules, expr) {
 }
 
 function updatePathDb(db, context) {
-  console.log("before", printDb(db));
   context.forEach((c) => {
     c.notes.get("delete").forEach(([tag, tuple]) => dbAddTuple(db, tag, tuple, -1));
     c.notes.get("add").forEach(([tag, tuple]) => dbAddTuple(db, tag, tuple, +1));
   });
-  console.log("after", printDb(db));
 }
 
 function updateTip({ db, rules, js }, data, tip, path) {
@@ -256,6 +255,7 @@ function updateTip({ db, rules, js }, data, tip, path) {
         context,
       };
     }
+    // todo: move to evalQuery
     case "binOp": {
       let { operator, l, r, rest } = episode;
       let fn = binaryOperatorFunctions[operator];
@@ -464,6 +464,48 @@ function ppTip(tip) {
   return d.flex("column", d.createText(ppContext(tip.context)), ppEpisode(tip.episode));
 }
 
+// map from object to element
+// render elements
+function renderSubsetSelector(map, hasValidExtension, k) {
+  let e = d.create("div");
+  let chosen = new Set();
+  for (let [term, elem] of map) {
+    d.childParent(elem, e);
+    elem = withMouseHighlight(elem);
+    elem.classList.add("episode");
+    elem.onclick = () => {
+      if (chosen.has(term)) {
+        chosen.delete(term);
+        elem.classList.remove("selection");
+      } else {
+        chosen.add(term);
+        if (hasValidExtension(chosen)) {
+          elem.classList.add("selection");
+        } else {
+          chosen.delete(term);
+        }
+      }
+    };
+  }
+  let done = d.create("button");
+  done = withMouseHighlight(done);
+  done.innerHTML = "accept";
+  done.onclick = () => {
+    done.classList.add("selection");
+    k(chosen);
+  };
+  d.childParent(done, e);
+  return e;
+}
+
+function renderChoices(renderer, set, k) {
+  let m = new Map();
+  for (let v of set) {
+    m.set(v, renderer(v));
+  }
+  return renderSubsetSelector(m, () => true, k);
+}
+
 function exprToList(expr) {
   let result = [];
   while (expr) {
@@ -533,6 +575,49 @@ function renderState(root, ep) {
     }
     default:
       throw "";
+  }
+}
+
+function renderWorld(tuples, app) {
+  tuples = af(tuples);
+  let elements = new DelayedMap();
+  //console.log("!!!!!!!!!", af(tuples));
+
+  function mk(label, s) {
+    //console.log("making: ", s);
+    let e = d.createText(`${label}: ${ppTerm(s)}`);
+    app.appendChild(e);
+    elements.set(ppTerm(s), e);
+    return e;
+  }
+
+  for (let [tag, tuple] of tuples) {
+    //console.log("!!!!!!!!!!!!!!!!!!!!!!!", tag, tuple);
+    switch (tag) {
+      case "spirit": {
+        let [s] = tuple;
+        d.withClass(mk(tag, s), "spirit");
+        break;
+      }
+      case "land": {
+        let [l] = tuple;
+        d.withClass(mk(tag, l), "land");
+        break;
+      }
+      case "adjacent": {
+        let [a, b] = tuple;
+        break;
+      }
+      case "located": {
+        let [a, b] = tuple;
+        elements.get(ppTerm(a), (a) => {
+          elements.get(ppTerm(b), (b) => {
+            d.childParent(a, b);
+          });
+        });
+        break;
+      }
+    }
   }
 }
 
@@ -609,6 +694,7 @@ turn -> do turn.
   ev = mkEventByName(rules, "game");
 
   let app;
+  let log = d.getId("log");
 
   function updateTipAction(tip, data) {
     ev = updateTipById(program, ev, tip.id, data);
@@ -616,11 +702,11 @@ turn -> do turn.
   }
   function updateUI() {
     [ev, options] = reduceEvent(ev);
-    console.log(options.length);
     if (app) d.remove(app);
-    app = d.createChildId("div", "log");
+    app = d.createChild("div", log);
 
     if (ev) d.childParent(renderState({ action: updateTipAction }, ev), app);
+    renderWorld(tuplesOfDb(db), app);
     d.childParent(d.renderJSON(options), app);
   }
 
@@ -629,54 +715,9 @@ turn -> do turn.
 
 window.onload = newMain;
 
-// map from object to element
-// render elements
-function renderSubsetSelector(map, hasValidExtension, k) {
-  let e = d.create("div");
-  let chosen = new Set();
-  for (let [term, elem] of map) {
-    d.childParent(elem, e);
-    elem = withMouseHighlight(elem);
-    elem.classList.add("episode");
-    elem.onclick = () => {
-      if (chosen.has(term)) {
-        chosen.delete(term);
-        elem.classList.remove("selection");
-      } else {
-        chosen.add(term);
-        if (hasValidExtension(chosen)) {
-          elem.classList.add("selection");
-        } else {
-          chosen.delete(term);
-        }
-      }
-    };
-  }
-  let done = d.create("button");
-  done = withMouseHighlight(done);
-  done.innerHTML = "accept";
-  done.onclick = () => {
-    done.classList.add("selection");
-    k(chosen);
-  };
-  d.childParent(done, e);
-  return e;
-}
-
-function renderChoices(renderer, set, k) {
-  let m = new Map();
-  for (let v of set) {
-    m.set(v, renderer(v));
-  }
-  return renderSubsetSelector(m, () => true, k);
-}
-
 /* todo now
-binop
 cleanup
   fix terminology (episode/expr/tip)
-basic ui work
-  board: visualize entire db
 quantifiers
   checks for = and up to
 ? `new` operation

@@ -123,6 +123,11 @@ function* iterDb(db) {
     }
   }
 }
+function* tuplesOfDb(db) {
+  for (let [key, tuple, _b] of iterDb(db)) {
+    yield [key, tuple];
+  }
+}
 function printDb(db) {
   return af(db.entries()).map(([tag, rel]) => [
     tag,
@@ -298,4 +303,5 @@ export {
   mkVar,
   mkSym,
   mkSet,
+  tuplesOfDb,
 };
