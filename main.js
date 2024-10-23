@@ -337,7 +337,8 @@ function updateEvent(root, path, id, fn) {
 
 function renderButton(content, { enter, exit, action, context }) {
   let e = d.create("div");
-  e.innerHTML = content;
+  e.appendChild(content);
+  //e.innerHTML = content;
   e = withMouseHighlight(e);
   e.addEventListener("mouseenter", () => {
     if (enter) enter();
@@ -358,52 +359,6 @@ function createEpisodeElem(name, episodes) {
       "episode"
     );
   else return d.flex("row", ...episodes);
-}
-
-// episode := { tag: ('concurrent' | 'tip'), value: Array episode, ?next: () -> episode, ?tuples: db }
-function renderEpisode(root, ep) {
-  let { tag } = ep;
-  switch (tag) {
-    case "concurrent": {
-      return createEpisodeElem(ep.name, ep.value.map(renderEpisode[ap](root)));
-    }
-    case "tip": {
-      return d.withClass(renderTip(root, ep), "margin", "episode");
-    }
-    default:
-      throw "";
-  }
-}
-
-function renderTip({ action }, tip) {
-  let { episode, context } = tip;
-  switch (episode.tag) {
-    case "choose":
-      let e = d.create("div");
-      let sets = new Map();
-      for (let c of context) {
-        e.appendChild(
-          renderChoices(
-            (b) => d.createText(ppBinding(b)),
-            c.get("_choices"),
-            (set) => {
-              sets.set(c, set);
-              // join after all choices made
-              if (sets.size === tip.context.length) {
-                let data = [];
-                for (let v of sets.values()) {
-                  data.push(...Array.from(v));
-                }
-                action(tip, data);
-              }
-            }
-          )
-        );
-      }
-      return d.flex("row", e, d.createText(","), d.createText(ppEpisode(episode.rest)));
-    default:
-      return renderButton(ppTip(tip), { action: () => action(tip, null) });
-  }
 }
 
 function ppEvent(expr) {
@@ -432,7 +387,7 @@ function ppEvent(expr) {
   }
 }
 
-function ppEpisode(e) {
+function _ppEpisode(e) {
   switch (e.tag) {
     case "observation": {
       return `${ppQuery([e.pattern])}, ${ppEpisode(e.rest)}`;
@@ -455,7 +410,8 @@ function ppEpisode(e) {
       return `[${ppEpisode(e.body)} | ${ppQuery(e.tuples)}]`;
     }
     case "modification": {
-      return `(${ppQuery(e.before)}) ! (${ppQuery(e.after)})`;
+      let { before, after, rest } = e;
+      return `(${ppQuery(before)}) ! (${ppQuery(after)}), ${ppEpisode(rest)}`;
     }
     default:
       throw "";
@@ -463,8 +419,123 @@ function ppEpisode(e) {
   }
 }
 
-function ppTip(tip) {
+function ppEpisode(e) {
+  switch (e.tag) {
+    case "observation": {
+      return `${ppQuery([e.pattern])}`;
+    }
+    case "choose": {
+      let { actor, quantifier, rest } = e;
+      return `${actor} chooses ${quantifier}`;
+    }
+    case "do": {
+      return `do ${ppEvent(e.value)}`;
+    }
+    case "done": {
+      return "done";
+    }
+    case "subquery": {
+      let { query, name, rest } = e;
+      return `${name} := ?(${ppQuery(query)})`;
+    }
+    case "with-tuples": {
+      return `[${ppEpisode(e.body)} | ${ppQuery(e.tuples)}]`;
+    }
+    case "modification": {
+      let { before, after, rest } = e;
+      return `(${ppQuery(before)}) ! (${ppQuery(after)})`;
+    }
+    default:
+      throw "";
+  }
+}
+
+function _ppTip(tip) {
   return `${ppEpisode(tip.episode)} | ${tip.context.map(ppBinding).join("; ")}`;
+}
+
+function ppTip(tip) {
+  return d.flex(
+    "column",
+    d.createText(tip.context.map(ppBinding).join("; ")),
+    ppEpisode(tip.episode)
+  );
+}
+
+function exprToList(expr) {
+  let result = [];
+  while (expr) {
+    result.push(expr);
+    expr = expr.rest;
+  }
+  return result;
+}
+
+function flatten(pair) {
+  if (pair === null) return [];
+  return [pair[0]].concat(flatten(pair[1]));
+}
+
+function renderTip({ action }, tip) {
+  function renderHead(expr) {
+    switch (expr.tag) {
+      case "choose":
+        let e = d.create("div");
+        let sets = new Map();
+        for (let c of context) {
+          e.appendChild(
+            renderChoices(
+              (b) => d.createText(ppBinding(b)),
+              c.get("_choices"),
+              (set) => {
+                sets.set(c, set);
+                // join after all choices made
+                if (sets.size === tip.context.length) {
+                  let data = [];
+                  for (let v of sets.values()) {
+                    data.push(...Array.from(v));
+                  }
+                  action(tip, data);
+                }
+              }
+            )
+          );
+        }
+        return e;
+      default:
+        return renderButton(d.createText(ppEpisode(expr)), {
+          action: () => action(tip, null),
+        });
+    }
+  }
+  let { episode, context } = tip;
+  let rest = episode.rest || [];
+  return d.flex(
+    "column",
+    d.createText(context.map(ppBinding).join("; ")),
+    d.createText("------"),
+    renderHead(episode),
+    d.withClass(
+      d.create("div", ...exprToList(episode.rest).map((e) => d.createText(ppEpisode(e)))),
+      "faint"
+    )
+  );
+  //return renderButton(ppTip(tip), { action: () => action(tip, null) });
+}
+
+// episode := { tag: ('concurrent' | 'tip'), value: Array episode, ?next: () -> episode, ?tuples: db }
+function renderState(root, ep) {
+  let { tag } = ep;
+  switch (tag) {
+    case "concurrent": {
+      return createEpisodeElem(ep.name, ep.value.map(renderState[ap](root)));
+    }
+    case "tip": {
+      return d.withClass(renderTip(root, ep), "margin", "episode");
+    }
+    default:
+      throw "";
+  }
 }
 
 function parseProgram(text) {
@@ -556,7 +627,7 @@ turn -> do turn.
     if (app) d.remove(app);
     app = d.createChildId("div", "log");
 
-    if (ev) d.childParent(renderEpisode({ action: updateTipAction }, ev), app);
+    if (ev) d.childParent(renderState({ action: updateTipAction }, ev), app);
     d.childParent(d.renderJSON(options), app);
   }
 
@@ -621,7 +692,7 @@ function withMouseHighlight(elem) {
 }
 
 /* todo now
-before/after
+fix terminology (episode/expr/tip)
 basic ui work
   board: visualize entire db
 choice
