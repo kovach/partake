@@ -35,9 +35,11 @@ term -> "'" identifier {% (d) => ({tag: 'sym', value: d[1]}) %}
 relation -> predicate (__ term):* {% (d) => {return {tag: d[0], terms: d[1].map(t => t[1])}} %}
 
 # p2 x y, p1 z, foo
+relationList -> relation (_ ","):? {% (d) => [d[0]] %}
+relationList -> relation _ "," _ relationList {% (d) => [d[0]].concat(d[4]) %}
+
 pureQuery -> null {% () => [] %}
-pureQuery -> relation {% (d) => [d[0]] %}
-pureQuery -> relation _ "," _ pureQuery {% (d) => [d[0]].concat(d[4]) %}
+pureQuery -> relationList {% id %}
 
 event_expr -> "." {% (d) => ({ tag: "done"}) %} # todo remove
 event_expr -> identifier {% (d) => ({ tag: "literal", name: d[0]}) %}

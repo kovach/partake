@@ -668,6 +668,29 @@ function renderState(root, ep) {
   }
 }
 
+function mkWorldRender(tokens, containments, ignored) {
+  return (tuples, app) => {
+    function mk(label, s) {
+      let e = d.createText(`${label}: ${ppTerm(s)}`);
+      app.appendChild(e);
+      elements.set(ppTerm(s), e);
+      return e;
+    }
+    let elements = new DelayedMap();
+    for (let [tag, tuple] of tuples) {
+      if (tokens.includes(tag)) d.withClass(mk(tag, tuple[0]), tag);
+      else if (containments.includes(tag)) {
+        let [a, b] = tuple;
+        elements.get(ppTerm(a), (a) => {
+          elements.get(ppTerm(b), (b) => {
+            d.childParent(a, b);
+          });
+        });
+      } else if (ignored.includes(tag)) {
+      } else throw "";
+    }
+  };
+}
 function renderWorld(tuples, app) {
   tuples = af(tuples);
   let elements = new DelayedMap();
@@ -800,13 +823,15 @@ turn -> do turn.
     ev = updateTipById(program, ev, tip.id, data);
     updateUI();
   }
+  //let render = mkWorldRender(["spirit", "land"], ["located"], ["adjacent"]);
+  let render = mkWorldRender(["hand", "deck", "card"], ["located"]);
   function updateUI() {
     [ev, options] = reduceEvent(ev);
     if (app) d.remove(app);
     app = d.createChild("div", log);
 
     if (ev) d.childParent(renderState({ action: updateTipAction }, ev), app);
-    renderWorld(tuplesOfDb(db), app);
+    render(tuplesOfDb(db), app);
     d.childParent(d.renderJSON(options), app);
   }
 
