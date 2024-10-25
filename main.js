@@ -422,6 +422,16 @@ function ppEvent(expr) {
     }
   }
 }
+function ppQuantifier(quantifier) {
+  switch (quantifier.tag) {
+    case "eq":
+      return `${quantifier.count}`;
+    case "limit":
+      return `max ${quantifier.count}`;
+    case "amapLimit":
+      return `~${quantifier.count}`;
+  }
+}
 function ppEpisode(e) {
   switch (e.tag) {
     case "observation": {
@@ -429,7 +439,7 @@ function ppEpisode(e) {
     }
     case "choose": {
       let { actor, quantifier, name } = e;
-      return `${actor} chooses ${quantifier} ${name}`;
+      return `${actor} chooses ${ppQuantifier(quantifier)} ${name}`;
     }
     case "count": {
       let { name, rest } = e;
@@ -515,6 +525,18 @@ function exprToList(expr) {
   return result;
 }
 
+// returns true if quantifier can be satisfied
+function checkQuantifierFailure(quantifier, options) {
+  switch (quantifier.tag) {
+    case "eq":
+      return options.length >= quantifier.count;
+    case "limit":
+      return true;
+    case "amapLimit":
+      return true;
+  }
+}
+
 function checkQuantifier(quantifier, set, options) {
   switch (quantifier.tag) {
     case "eq":
@@ -549,13 +571,17 @@ function renderTip({ action }, tip) {
         let { actor, quantifier, name } = expr;
         let e = d.create("div");
         let sets = new Map();
+        context = context.filter((c) =>
+          checkQuantifierFailure(quantifier, c.get(name).value)
+        );
         for (let c of context) {
           let options = c.get(name).value;
           e.appendChild(
             renderChoices(
               (b) => d.createText(ppBinding(b)),
               options,
-              (set, chooser) => {
+              (set, picker) => {
+                // returns whether choice is valid; used to update picker element
                 sets.set(c, set);
                 // join after all choices made
                 if (
@@ -573,10 +599,10 @@ function renderTip({ action }, tip) {
                 }
 
                 if (!checkQuantifier(quantifier, set, options)) {
-                  chooser.classList.add("error");
+                  picker.classList.add("error");
                   return false;
                 } else {
-                  chooser.classList.remove("error");
+                  picker.classList.remove("error");
                   return true;
                 }
               }
@@ -723,7 +749,7 @@ turn: land L, spirit S, done.
 `;
 
   let programText4 = `
-game: () ! (land a, land b, land c, adjacent a b, adjacent b a, adjacent a c, spirit s, spirit t, located s a), do turn.
+game: () ! (land a, land b, land c, adjacent a b, adjacent b a, adjacent a c, spirit s, spirit t, located s a, located t c), do turn.
 turn: spirit S, located S L, S chooses 1 (adjacent L L'), (located S L) ! (located S L'), done.
 turn -> do turn.
 `;
@@ -764,16 +790,14 @@ datalog?
 
 cleanup
   fix terminology (episode/expr/tip)
-quantifiers
-  checks for = and up to
 
 actors
   player, default, random
 count
   not, comparisons
+? allow to pick invalid entities but explain why not included in query
 fix "turn'" nesting
 
-? draw episodes in progress
 */
 
 /* later plan
