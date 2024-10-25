@@ -29,6 +29,7 @@ fnCall -> "!" identifier _ "(" _ argList _ ")"
 term -> var {% (d) => ({tag: 'var', value: d[0]}) %}
 term -> [0-9]:+ {% (d) => ({tag: 'int', value: parseInt(d[0].join(""))}) %}
 term -> fnCall {% id %}
+term -> "'" identifier {% (d) => ({tag: 'sym', value: d[1]}) %}
 
 # pred2 x y -> ["pred", ["x", "y"]]
 relation -> predicate (__ term):* {% (d) => {return {tag: d[0], terms: d[1].map(t => t[1])}} %}
@@ -51,7 +52,7 @@ episode_expr -> relation comma episode_expr {% (d) => ({ tag: "observation", pat
 # todo: X> and >X.
 episode_expr -> op pureQuery cp _ "!" _ op pureQuery cp comma episode_expr
   {% (d) => ({ tag: "modification", before: d[1], after: d[7], rest: d[10] }) %}
-episode_expr -> var __ "chooses" __ quantifier __ "(" _ pureQuery cp comma episode_expr
+episode_expr -> term __ "chooses" __ quantifier __ "(" _ pureQuery cp comma episode_expr
   {% (d) => ({
       // todo: use unreachable name
       tag: "subquery", query: d[8], name: '?', rest:

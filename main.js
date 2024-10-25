@@ -20,6 +20,7 @@ import {
   mkInt,
   mkSet,
   tuplesOfDb,
+  mkSym,
 } from "./join.js";
 
 import { assert, ArrayMap, DelayedMap } from "./collections.js";
@@ -439,7 +440,7 @@ function ppEpisode(e) {
     }
     case "choose": {
       let { actor, quantifier, name } = e;
-      return `${actor} chooses ${ppQuantifier(quantifier)} ${name}`;
+      return `${ppTerm(actor)} chooses ${ppQuantifier(quantifier)} ${name}`;
     }
     case "count": {
       let { name, rest } = e;
@@ -569,47 +570,69 @@ function renderTip({ action }, tip) {
     switch (expr.tag) {
       case "choose":
         let { actor, quantifier, name } = expr;
-        let e = d.create("div");
-        let sets = new Map();
-        context = context.filter((c) =>
-          checkQuantifierFailure(quantifier, c.get(name).value)
-        );
-        for (let c of context) {
-          let options = c.get(name).value;
-          e.appendChild(
-            renderChoices(
-              (b) => d.createText(ppBinding(b)),
-              options,
-              (set, picker) => {
-                // returns whether choice is valid; used to update picker element
-                sets.set(c, set);
-                // join after all choices made
-                if (
-                  sets.size === context.length &&
-                  af(sets.values()).every((set) =>
-                    checkQuantifier(quantifier, set, options)
-                  )
-                ) {
-                  let data = [];
-                  for (let v of sets.values()) {
-                    data.push(...Array.from(v));
-                  }
-                  action(tip, data);
-                  // no need to return; element will be removed
-                }
 
-                if (!checkQuantifier(quantifier, set, options)) {
-                  picker.classList.add("error");
-                  return false;
-                } else {
-                  picker.classList.remove("error");
-                  return true;
-                }
-              }
-            )
-          );
+        function getOptions(c) {
+          return c.get(name).value;
         }
-        return e;
+
+        // todo: should be part of updateTip
+        context = context.filter((c) =>
+          checkQuantifierFailure(quantifier, getOptions(c))
+        );
+
+        // handles two actors: the randomizer, or the user
+        if (valEqual(actor, mkSym("rand"))) {
+          return renderButton(d.createText(ppEpisode(expr)), {
+            action: () => {
+              let data = [];
+              for (let c of context) {
+                // todo: display the choice in button
+                let v = randomizeQuantifier(quantifier, getOptions(c));
+                data.push(...v);
+              }
+              action(tip, data);
+            },
+          });
+        } else {
+          let e = d.create("div");
+          let sets = new Map();
+          for (let c of context) {
+            let options = getOptions(c);
+            e.appendChild(
+              renderChoices(
+                (b) => d.createText(ppBinding(b)),
+                options,
+                (set, picker) => {
+                  // returns whether choice is valid; used to update picker element
+                  sets.set(c, set);
+                  // join after all choices made
+                  if (
+                    sets.size === context.length &&
+                    af(sets.values()).every((set) =>
+                      checkQuantifier(quantifier, set, options)
+                    )
+                  ) {
+                    let data = [];
+                    for (let v of sets.values()) {
+                      data.push(...Array.from(v));
+                    }
+                    action(tip, data);
+                    // no need to return; element will be removed
+                  }
+
+                  if (!checkQuantifier(quantifier, set, options)) {
+                    picker.classList.add("error");
+                    return false;
+                  } else {
+                    picker.classList.remove("error");
+                    return true;
+                  }
+                }
+              )
+            );
+          }
+          return e;
+        }
       default:
         return renderButton(d.createText(ppEpisode(expr)), {
           action: () => action(tip, null),
@@ -749,8 +772,12 @@ turn: land L, spirit S, done.
 `;
 
   let programText4 = `
-game: () ! (land a, land b, land c, adjacent a b, adjacent b a, adjacent a c, spirit s, spirit t, located s a, located t c), do turn.
-turn: spirit S, located S L, S chooses 1 (adjacent L L'), (located S L) ! (located S L'), done.
+game: () ! (land a, land b, land c, adjacent a b, adjacent b a, adjacent a c,
+            spirit 's, spirit 't, located 's a, located 't c), do turn.
+turn: spirit S, located S L,
+  S chooses 1 (adjacent L L'),
+  'rand chooses 1 (adjacent L L''),
+  (located S L) ! (located S L'), done.
 turn -> do turn.
 `;
 
@@ -783,6 +810,8 @@ turn -> do turn.
 window.onload = newMain;
 
 /* todo now
+
+record trail
 chooser applied to other ui elements
 ? `new` operation
 grid
@@ -791,12 +820,12 @@ datalog?
 cleanup
   fix terminology (episode/expr/tip)
 
-actors
-  player, default, random
 count
   not, comparisons
 ? allow to pick invalid entities but explain why not included in query
 fix "turn'" nesting
+actors
+  default, helper
 
 */
 
