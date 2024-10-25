@@ -23,7 +23,7 @@ argList -> term (_ "," _ argList):?
     let rest = (d[1] !== null) ? d[1][3] : []
     return [d[0]].concat(rest)
   } %}
-fnCall -> "!" identifier _ "(" _ argList _ ")"
+fnCall -> "#" identifier _ "(" _ argList _ ")"
   {% (d) => ({tag :'call', fn: d[1], args: d[5]}) %}
 
 term -> var {% (d) => ({tag: 'var', value: d[0]}) %}

@@ -140,9 +140,11 @@ function isLiteral(term) {
   assert(term.tag !== undefined);
   return term.tag !== "var";
 }
-
+function isHole(term) {
+  return term.tag === "var" && term.value === "_";
+}
 function isVar(term) {
-  return !isLiteral(term);
+  return !isLiteral(term) && !isHole(term);
 }
 
 function evalTerm(js, binding, term) {
@@ -235,6 +237,8 @@ function ppTerm(term) {
       return `${term.value}`;
     case "set":
       return ppContext(term.value);
+    case "call":
+      return `#${term.fn}(${term.args.map(ppTerm).join(", ")})`;
     default:
       throw "todo";
   }
@@ -261,10 +265,12 @@ function freshId() {
   return { tag: "sym", value: globalIdCounter++ };
 }
 
-function unrename(js, binding, terms) {
+function substitute(js, binding, terms) {
   return terms.map((term) => {
     if (isLiteral(term)) return evalTerm(js, binding, term);
-    else {
+    if (isHole(term)) {
+      return freshId();
+    } else {
       assert(isVar(term));
       let v = term.value;
       let maybeV = binding.get(v);
@@ -294,7 +300,7 @@ export {
   emptyBinding,
   evalQuery,
   freshId,
-  unrename,
+  substitute,
   ppQuery,
   ppTerm,
   ppBinding,

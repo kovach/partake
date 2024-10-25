@@ -1,5 +1,5 @@
 import {
-  unrename,
+  substitute,
   dbOfList,
   dbAddTuple,
   af,
@@ -68,7 +68,7 @@ function parseNonterminal(nt, text) {
 }
 function makeTuple(js, binding, pattern) {
   let { tag, terms } = pattern;
-  return [tag, unrename(js, binding, terms)];
+  return [tag, substitute(js, binding, terms)];
 }
 
 function ppTuple(tag, tuple) {
@@ -741,7 +741,7 @@ function parseExamples() {
   console.log("parse ep", e`do turn`);
 }
 
-function newMain() {
+function newMain(prog) {
   let pe = parseNonterminal[ap]("episode_expr");
   let e = toTag(pe); // ([str]) => pe(str);
 
@@ -782,9 +782,15 @@ turn -> do turn.
 `;
 
   let ev, options;
-  let rules = parseProgram(programText4);
+  let rules = parseProgram(prog);
   let db = emptyDb();
-  let program = { rules, db, js: {} };
+  let program = {
+    rules,
+    db,
+    js: {
+      add: (a, b) => mkInt(a.value + b.value),
+    },
+  };
   ev = mkEventByName(rules, "game");
 
   let app;
@@ -807,11 +813,19 @@ turn -> do turn.
   updateUI();
 }
 
-window.onload = newMain;
+window.onload = () => {
+  fetch("sf.mm")
+    .then((res) => res.text())
+    .then((text) => newMain(text));
+};
 
 /* todo now
 
-record trail
+eliminate done.
+interface
+  record trail
+  undo
+
 chooser applied to other ui elements
 ? `new` operation
 grid
