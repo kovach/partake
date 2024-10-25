@@ -27,6 +27,7 @@ import { assert, ArrayMap, DelayedMap } from "./collections.js";
 import * as d from "./dom.js";
 
 import grammar from "./grammar.js";
+import { hist, randomSample } from "./random.js";
 
 let ap = Symbol("partial-apply");
 let mapMaybe = Symbol("mapMaybe");
@@ -427,8 +428,8 @@ function ppEpisode(e) {
       return `${ppQuery([e.pattern])}`;
     }
     case "choose": {
-      let { actor, quantifier, rest } = e;
-      return `${actor} chooses ${quantifier}`;
+      let { actor, quantifier, name } = e;
+      return `${actor} chooses ${quantifier} ${name}`;
     }
     case "count": {
       let { name, rest } = e;
@@ -442,7 +443,7 @@ function ppEpisode(e) {
     }
     case "subquery": {
       let { query, name, rest } = e;
-      return `${name} := ?(${ppQuery(query)})`;
+      return `${name} := (${ppQuery(query)})`;
     }
     case "with-tuples": {
       return `[${ppEpisode(e.body)} | ${ppQuery(e.tuples)}]`;
@@ -491,8 +492,7 @@ function renderSubsetSelector(map, hasValidExtension, k) {
   done = withMouseHighlight(done);
   done.innerHTML = "accept";
   done.onclick = () => {
-    done.classList.add("selection");
-    k(chosen);
+    if (k(chosen, e)) done.classList.add("selection");
   };
   d.childParent(done, e);
   return e;
@@ -515,7 +515,34 @@ function exprToList(expr) {
   return result;
 }
 
+function checkQuantifier(quantifier, set, options) {
+  switch (quantifier.tag) {
+    case "eq":
+      return set.size === quantifier.count;
+    case "limit":
+      return set.size <= quantifier.count;
+    case "amapLimit":
+      return (
+        set.size <= quantifier.count &&
+        set.size >= Math.min(options.length, quantifier.count)
+      );
+  }
+}
+
+function randomizeQuantifier(quantifier, options) {
+  switch (quantifier.tag) {
+    case "eq":
+      return randomSample(options, quantifier.count);
+    case "limit":
+      throw "probably shouldn't be used";
+    case "amapLimit":
+      return randomSample(options, Math.min(options.size, quantifier.count));
+  }
+}
+
 function renderTip({ action }, tip) {
+  let { episode, context } = tip;
+
   function renderHead(expr) {
     switch (expr.tag) {
       case "choose":
@@ -523,19 +550,34 @@ function renderTip({ action }, tip) {
         let e = d.create("div");
         let sets = new Map();
         for (let c of context) {
+          let options = c.get(name).value;
           e.appendChild(
             renderChoices(
               (b) => d.createText(ppBinding(b)),
-              c.get(name).value,
-              (set) => {
+              options,
+              (set, chooser) => {
                 sets.set(c, set);
                 // join after all choices made
-                if (sets.size === tip.context.length) {
+                if (
+                  sets.size === context.length &&
+                  af(sets.values()).every((set) =>
+                    checkQuantifier(quantifier, set, options)
+                  )
+                ) {
                   let data = [];
                   for (let v of sets.values()) {
                     data.push(...Array.from(v));
                   }
                   action(tip, data);
+                  // no need to return; element will be removed
+                }
+
+                if (!checkQuantifier(quantifier, set, options)) {
+                  chooser.classList.add("error");
+                  return false;
+                } else {
+                  chooser.classList.remove("error");
+                  return true;
                 }
               }
             )
@@ -549,7 +591,6 @@ function renderTip({ action }, tip) {
     }
   }
 
-  let { episode, context } = tip;
   return d.flex(
     "column",
     d.createText(context.map(ppBinding).join("; ")),
@@ -661,7 +702,7 @@ game: () ! (land a, land b, spirit s,
   card y, cost y 2, blue y 2, red y 1), do turn.
 turn: spirit S, do [grow | the-spirit S].
 turn: land L, do [defend | the-land L].
-grow: the-spirit S, S chooses 1 ?(card C), cost C Cost, done.
+grow: the-spirit S, S chooses 1 (card C), cost C Cost, done.
 defend: the-land L, done.
 turn -> do turn.
 `;
@@ -671,7 +712,7 @@ game: do [turn | land a, land b, spirit s,
   card x, cost x 1, green x 1, red x 1,
   card y, cost y 2, blue y 2, red y 1
   ].
-turn: land S, S chooses 1 ?(card C), cost C Cost, done.
+turn: land S, S chooses 1 (card C), cost C Cost, done.
 `;
 
   let programText3 = `
@@ -682,8 +723,8 @@ turn: land L, spirit S, done.
 `;
 
   let programText4 = `
-game: () ! (land a, land b, land c, adjacent a b, adjacent b a, adjacent a c, adjacent c a, spirit s, spirit t, located s a), do turn.
-turn: Count := count (spirit _), spirit S, located S L, S chooses 1 ?(adjacent L L'), (located S L) ! (located S L'), done.
+game: () ! (land a, land b, land c, adjacent a b, adjacent b a, adjacent a c, spirit s, spirit t, located s a), do turn.
+turn: spirit S, located S L, S chooses 1 (adjacent L L'), (located S L) ! (located S L'), done.
 turn -> do turn.
 `;
 
@@ -716,11 +757,15 @@ turn -> do turn.
 window.onload = newMain;
 
 /* todo now
+chooser applied to other ui elements
+? `new` operation
+grid
+datalog?
+
 cleanup
   fix terminology (episode/expr/tip)
 quantifiers
   checks for = and up to
-? `new` operation
 
 actors
   player, default, random
