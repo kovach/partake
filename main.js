@@ -28,7 +28,7 @@ import { assert, ArrayMap, DelayedMap } from "./collections.js";
 import * as d from "./dom.js";
 
 import grammar from "./grammar.js";
-import { hist, randomSample } from "./random.js";
+import { randomSample } from "./random.js";
 
 let ap = Symbol("partial-apply");
 let mapMaybe = Symbol("mapMaybe");
@@ -212,9 +212,7 @@ function updateTip({ db, rules, js }, data, tip, path) {
     case "modification": {
       let { before, after, rest } = episode;
       before = before.map((pattern) => ({ ...pattern, modifiers: ["delete"] }));
-      //if (before.length > 0) throw "";
       context = af(evalQuery(db, js, before, context));
-      // may modify c!
       context.forEach((c) => {
         after.forEach((pattern) => {
           c.notes.add("add", makeTuple(js, c, pattern));
@@ -291,7 +289,6 @@ function updateTip({ db, rules, js }, data, tip, path) {
 
 function updateTipById(program, root, id, data) {
   return updateEvent(root, [], id, updateTip[ap](program, data));
-  //return updateEvent(root, [], id, updateTip[ap](program)[ap](data));
 }
 
 function eventCompleted(event) {
@@ -304,7 +301,6 @@ function eventCompleted(event) {
 
 function reduceEvent(event) {
   function go(event, options) {
-    //console.log("visit: ", event.id, event.tag);
     switch (event.tag) {
       case "concurrent": {
         event.value = arrayUpdate(event.value, (e) => go(e, options)).filter((x) => x);
@@ -559,7 +555,7 @@ function randomizeQuantifier(quantifier, options) {
     case "limit":
       throw "probably shouldn't be used";
     case "amapLimit":
-      return randomSample(options, Math.min(options.size, quantifier.count));
+      return randomSample(options, Math.min(options.length, quantifier.count));
   }
 }
 
@@ -594,16 +590,16 @@ function renderTip({ action }, tip) {
             },
           });
         } else {
-          let e = d.create("div");
           let sets = new Map();
-          for (let c of context) {
-            let options = getOptions(c);
-            e.appendChild(
-              renderChoices(
+          return d.create(
+            "div",
+            ...context.map((c) => {
+              let options = getOptions(c);
+              return renderChoices(
                 (b) => d.createText(ppBinding(b)),
                 options,
+                // returns whether choice is valid; used to update picker element
                 (set, picker) => {
-                  // returns whether choice is valid; used to update picker element
                   sets.set(c, set);
                   // join after all choices made
                   if (
@@ -628,10 +624,9 @@ function renderTip({ action }, tip) {
                     return true;
                   }
                 }
-              )
-            );
-          }
-          return e;
+              );
+            })
+          );
         }
       default:
         return renderButton(d.createText(ppEpisode(expr)), {
@@ -650,7 +645,6 @@ function renderTip({ action }, tip) {
       "faint"
     )
   );
-  //return renderButton(ppTip(tip), { action: () => action(tip, null) });
 }
 
 // episode := { tag: ('concurrent' | 'tip'), value: Array episode, ?next: () -> episode, ?tuples: db }
@@ -824,7 +818,7 @@ turn -> do turn.
     updateUI();
   }
   //let render = mkWorldRender(["spirit", "land"], ["located"], ["adjacent"]);
-  let render = mkWorldRender(["hand", "deck", "card"], ["located"]);
+  let render = mkWorldRender(["hand", "deck", "card", "rat"], ["located"], []);
   function updateUI() {
     [ev, options] = reduceEvent(ev);
     if (app) d.remove(app);
@@ -846,7 +840,14 @@ window.onload = () => {
 
 /* todo now
 
-eliminate done.
+simple
+  eliminate done.
+  batch query parts into one step
+  ! run until choice?
+
+show history
+early exit queries that can't match
+
 interface
   record trail
   undo

@@ -249,6 +249,10 @@ function ppBinding(binding) {
   for (let key of binding) {
     if (key[0] !== "_") pairs.push(`${key}: ${ppTerm(binding.get(key))}`);
   }
+  let deleted = binding.notes.get("delete");
+  let added = binding.notes.get("add");
+  if (deleted.length + added.length > 0)
+    pairs.push(`(${ppTuples(deleted)}) ! (${ppTuples(added)})`);
   return `{${pairs.join(", ")}}`;
 }
 
@@ -256,9 +260,13 @@ function ppContext(context) {
   return `[${context.map(ppBinding).join("; ")}]`;
 }
 
-const ppQuery = (ps) => {
+function ppQuery(ps) {
   return ps.map(({ tag, terms }) => [tag].concat(terms.map(ppTerm)).join(" ")).join(", ");
-};
+}
+
+function ppTuples(ps) {
+  return ps.map(([tag, terms]) => [tag].concat(terms.map(ppTerm)).join(" ")).join(", ");
+}
 
 let globalIdCounter = 0;
 function freshId() {
