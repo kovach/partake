@@ -1,26 +1,15 @@
-import { assert, ArrayMap } from "./collections.js";
+import { assert } from "./collections.js";
 import { Binding } from "./binding.js";
 
 const str = (e) => JSON.stringify(e, null, 2);
 const pp = (x) => console.log(str(x));
-const compose = (f, g) => (x) => f(g(x));
 const af = Array.from;
-const afs = (x) => JSON.stringify(Array.from(x));
-
-const rootContainer = "#app";
 
 function scrollBody() {
   window.scrollTo(0, document.body.scrollHeight);
 }
-function addDoc(x) {
-  document.querySelector(rootContainer).innerHTML += `<p>${x}</p>`;
-  scrollBody();
-}
-function clearDoc(x) {
-  document.querySelector(rootContainer).innerHTML = "";
-  scrollBody();
-}
 
+// todo: db class
 function emptyDb() {
   return new Map();
 }
@@ -105,8 +94,6 @@ function dbOfList(array) {
   }
   return r;
 }
-const emit = dbAddTuple;
-const remove = (db, tag, tuple) => dbAddTuple(db, tag, tuple, -1);
 
 function iterRel(db, tag) {
   return selectRel(db, tag).values();
@@ -134,7 +121,6 @@ function printDb(db) {
     af(rel.entries()).map(([key, [_, c]]) => [key, c]),
   ]);
 }
-/* end variables */
 
 function isLiteral(term) {
   assert(term.tag !== undefined);
@@ -227,6 +213,7 @@ function mkSym(value) {
 function mkSet(value) {
   return { tag: "set", value };
 }
+
 function ppTerm(term) {
   switch (term.tag) {
     case "var":
@@ -244,6 +231,12 @@ function ppTerm(term) {
   }
 }
 
+function ppQuery(ps) {
+  return ps.map(({ tag, terms }) => [tag].concat(terms.map(ppTerm)).join(" ")).join(", ");
+}
+function ppTuples(ps) {
+  return ps.map(([tag, terms]) => [tag].concat(terms.map(ppTerm)).join(" ")).join(", ");
+}
 function ppBinding(binding) {
   let pairs = [];
   for (let key of binding) {
@@ -252,20 +245,11 @@ function ppBinding(binding) {
   let deleted = binding.notes.get("delete");
   let added = binding.notes.get("add");
   if (deleted.length + added.length > 0)
-    pairs.push(`(${ppTuples(deleted)}) ! (${ppTuples(added)})`);
+    pairs.push(`(${ppTuples(deleted)}) => (${ppTuples(added)})`);
   return `{${pairs.join(", ")}}`;
 }
-
 function ppContext(context) {
   return `[${context.map(ppBinding).join("; ")}]`;
-}
-
-function ppQuery(ps) {
-  return ps.map(({ tag, terms }) => [tag].concat(terms.map(ppTerm)).join(" ")).join(", ");
-}
-
-function ppTuples(ps) {
-  return ps.map(([tag, terms]) => [tag].concat(terms.map(ppTerm)).join(" ")).join(", ");
 }
 
 let globalIdCounter = 0;
@@ -318,4 +302,5 @@ export {
   mkSym,
   mkSet,
   tuplesOfDb,
+  pp,
 };

@@ -457,7 +457,7 @@ function ppEpisode(e) {
     }
     case "modification": {
       let { before, after } = e;
-      return `(${ppQuery(before)}) ! (${ppQuery(after)})`;
+      return `(${ppQuery(before)}) => (${ppQuery(after)})`;
     }
     case "binOp": {
       let { operator, l, r } = e;
@@ -728,18 +728,32 @@ function renderWorld(tuples, app) {
   }
 }
 
+function splitArray(arr) {
+  assert(arr.length > 0);
+  return [arr[0], arr.slice(1)];
+}
+
+function fixBody(ruleBody) {
+  if (ruleBody.length === 0) return { tag: "done" };
+  let [head, tail] = splitArray(ruleBody);
+  if (head.tag === "done" || head.tag === "do") return head;
+  head.rest = fixBody(tail);
+  return head;
+}
 function parseProgram(text) {
   let exprs = parseNonterminal("program", text);
   let defs = new ArrayMap();
   let triggers = new ArrayMap();
   for (let e of exprs) {
-    switch (e.type) {
+    let { type, head, body } = e;
+    body = fixBody(body);
+    switch (type) {
       case "def": {
-        defs.add(e.head, e.body);
+        defs.add(head, body);
         break;
       }
       case "trigger": {
-        triggers.add(e.head, e.body);
+        triggers.add(head, body);
         break;
       }
       default:
@@ -758,10 +772,8 @@ function parseExamples() {
   console.log("parse ep", e`do turn`);
 }
 
-function newMain(prog) {
-  let pe = parseNonterminal[ap]("episode_expr");
-  let e = toTag(pe); // ([str]) => pe(str);
-
+function defunctProgramTexts() {
+  // todo: these don't parse
   let programText1 = `
 game: () ! (land a, land b, spirit s,
   card x, cost x 1, green x 1, red x 1,
@@ -797,6 +809,11 @@ turn: spirit S, located S L,
   (located S L) ! (located S L'), done.
 turn -> do turn.
 `;
+}
+
+function newMain(prog) {
+  let pe = parseNonterminal[ap]("episode_expr");
+  let e = toTag(pe); // ([str]) => pe(str);
 
   let ev, options;
   let rules = parseProgram(prog);
@@ -841,7 +858,6 @@ window.onload = () => {
 /* todo now
 
 simple
-  eliminate done.
   batch query parts into one step
   ! run until choice?
 
