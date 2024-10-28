@@ -21,6 +21,7 @@ import {
   mkSet,
   tuplesOfDb,
   mkSym,
+  cloneDb,
 } from "./join.js";
 
 import { assert, ArrayMap, DelayedMap } from "./collections.js";
@@ -82,19 +83,14 @@ function ppTuple(tag, tuple) {
   return `(${tag}${tupleText.length > 0 ? " " + tupleText : ""})`;
 }
 
-let app;
 let valRefs;
 let tupleRefs;
-function renderDb(db, parentId, previous) {
-  if (app) d.remove(app);
+function renderDb(db, app, previous) {
   valRefs = new ArrayMap();
   tupleRefs = new ArrayMap();
-  app = d.createChildId("div", parentId);
   for (let [tag, rel] of db.entries()) {
     for (let [value, _] of rel.values()) {
-      //console.log(`(${tag} ${value.join(" ")})`);
-      let e = d.createChild("div", app);
-      e.innerHTML = ppTuple(tag, value);
+      let e = app.appendChild(d.createText(ppTuple(tag, value)));
       if (previous) {
         if (!dbContains(previous, tag, value)) {
           e.classList.add("hl");
@@ -872,43 +868,46 @@ turn -> do turn.
 }
 
 function newMain(prog) {
-  let ev;
-  let options = [];
   let rules = parseProgram(prog);
-  let db = emptyDb();
   let program = {
     rules,
-    db,
+    db: emptyDb(),
     js: {
       add: (a, b) => mkInt(a.value + b.value),
     },
   };
-  ev = mkEpisodeByName(rules, "game");
 
-  let app;
+  let now = mkEpisodeByName(rules, "game");
+  let options = [];
+  let history = [];
+
   let log = d.getId("log");
+  let app;
 
   function updateOptions() {
     options = [];
-    ev = forceSequence(program, options, ev);
+    now = forceSequence(program, options, now);
     updateUI();
   }
 
   function updateBranchAction(branch, data) {
-    ev = updateBranchById(program, ev, branch.id, data);
+    history.push({ now, db: cloneDb(program.db) });
+    now = updateBranchById(program, now, branch.id, data);
     updateOptions();
   }
 
   let render = mkWorldRender(["hand", "deck", "card", "rat"], ["located"], []);
+
   function updateUI() {
     if (app) d.remove(app);
     app = d.createChild("div", log);
-    if (ev) {
-      app.appendChild(renderEpisode(updateBranchAction, true, ev));
+    if (now) {
+      app.appendChild(renderEpisode(updateBranchAction, true, now));
     }
-    render(tuplesOfDb(db), app);
+    render(tuplesOfDb(program.db), app);
     d.childParent(d.renderJSON(options), app);
     console.log(options.length);
+    //renderDb(program.db, app);
   }
 
   document.addEventListener("keydown", (ev) => {
@@ -919,6 +918,13 @@ function newMain(prog) {
           updateBranchAction(options[0], null);
         else console.log("click the choice!");
       } else console.log("no options");
+    } else if (ev.key === "k") {
+      if (history.length > 0) {
+        let past = history.pop();
+        now = past.now;
+        program.db = past.db;
+        updateOptions();
+      } else console.log("nothing to undo");
     } else console.log(ev);
   });
 
@@ -939,8 +945,6 @@ undo
   store:
     map: node id -> the state before it was clicked
       click old entry to undo
-    array of states
-      'k' to go back one
   key for super-undo
 
 simple
@@ -948,6 +952,7 @@ simple
   batch query parts into one step
   ! run until choice?
   add a way to make arbitrary db edit (or spawn/begin episode)
+  ? recursive check for object equality (prevent accidental sharing)
 
 replay log
   issue with id stability?

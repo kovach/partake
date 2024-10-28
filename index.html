@@ -47,6 +47,7 @@
         flex-direction: column;
       }
       .episode {
+        padding: 8px;
         display: flex;
         flex-direction: column;
         border: 2px solid;
@@ -83,12 +84,13 @@
         padding: 0px;
         margin: 0px;
       }
+      /* unused? */
       .code,
       button {
         padding: 0px;
         margin: 0px;
         font-family: "Courier New", Courier, monospace;
-        font-size: 14pt;
+        font-size: 13pt;
         white-space: pre-line;
       }
       .svg-row {
@@ -104,22 +106,26 @@
 
       .spirit,
       .card,
-      .rat {
+      .rat,
+      .land,
+      .hand,
+      .deck {
+        margin: 2px;
+        padding: 6px;
         border: 2px solid;
         border-radius: 15px;
+      }
+      .spirit,
+      .card,
+      .rat {
         background-color: #777;
         color: #fff;
-        padding: 6px;
       }
       .land,
       .hand,
       .deck {
-        margin: 3px;
-        padding: 3px;
         display: flex;
         flex-direction: column;
-        border: 2px solid;
-        border-radius: 15px;
       }
     </style>
     <script src=" https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js "></script>

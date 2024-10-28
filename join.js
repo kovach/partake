@@ -170,8 +170,8 @@ function extendBinding(c, tag, tuple, values, modifiers) {
   c.notes.add("used", fact);
   return c;
 }
-function* joinBindings(js, cs, { pattern: { tag, terms, modifiers }, tuples }) {
-  for (let c of cs) {
+function* joinBindings(js, context, { pattern: { tag, terms, modifiers }, tuples }) {
+  for (let c of context) {
     let values = terms.map((t) => evalTerm(js, c, t));
     for (let tuple of tuples) {
       let newC = extendBinding(c, tag, tuple, values, modifiers || []);
@@ -181,6 +181,9 @@ function* joinBindings(js, cs, { pattern: { tag, terms, modifiers }, tuples }) {
 }
 
 function evalQuery(db, js, query, context = [emptyBinding()]) {
+  // redundant. done to ensure result does not contain any input context
+  if (query.length === 0) return context.map((c) => c.clone());
+
   return query
     .map((pattern) => {
       assert(pattern.tag && pattern.terms);
@@ -303,4 +306,5 @@ export {
   mkSet,
   tuplesOfDb,
   pp,
+  cloneDb,
 };
