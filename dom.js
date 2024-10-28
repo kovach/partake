@@ -53,6 +53,10 @@ function flex(orientiation, ...children) {
   return e;
 }
 
+function createBlock(...args) {
+  return d.flex("column", ...args);
+}
+
 function renderJSON(json) {
   switch (jsonType(json)) {
     case "array":

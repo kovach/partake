@@ -55,6 +55,11 @@ function forEach(arr, f) {
   return false;
 }
 
+function splitArray(arr) {
+  assert(arr.length > 0);
+  return [arr[0], arr.slice(1)];
+}
+
 function parseNonterminal(nt, text) {
   let assertAmbiguity = true;
   let g = nearley.Grammar.fromCompiled(grammar);
@@ -101,8 +106,8 @@ function renderDb(db, parentId, previous) {
   }
 }
 
-function substituteEventExpr(js, binding, expr) {
-  let recurse = substituteEventExpr[ap](js)[ap](binding);
+function substituteEpisodeExpr(js, binding, expr) {
+  let recurse = substituteEpisodeExpr[ap](js, binding);
   switch (expr.tag) {
     case "done": {
       return expr;
@@ -126,55 +131,63 @@ function substituteEventExpr(js, binding, expr) {
     }
   }
 }
-function mkCompositeEvent(values) {
-  return { ...values, tag: "concurrent", id: freshId() };
-}
-// todo: remove
-function mkPrimitiveEvent(values) {
-  return { ...values, tag: "primitive", id: freshId() };
-}
-// todo: change field episode to expr
-function mkTip(expr) {
-  return { tag: "tip", episode: expr, context: [emptyBinding()], id: freshId() };
-}
-function isComposite(event) {
-  return event.tag === "concurrent";
+
+let branchFuture = {
+  // todo: rename? block?
+  expr: (value) => ({ tag: "expr", value }),
+  episode: (value) => ({ tag: "episode", value }),
+};
+
+let sequenceFuture = {
+  expr: (value) => ({ tag: "expr", value }),
+  episode: (value) => ({ tag: "episode", value }),
+};
+
+let episode = {
+  concurrent: (name, value) => ({ tag: "concurrent", id: freshId(), name, value }),
+  sequence: (value, rest) => ({ tag: "sequence", id: freshId(), value, rest }),
+  // todo
+  localTuples: (value, tuples) => ({
+    tag: "concurrent",
+    id: freshId(),
+    value: [value],
+    tuples,
+  }),
+  branch: (expr) => ({
+    tag: "branch",
+    id: freshId(),
+    past: [],
+    value: branchFuture.expr(expr),
+    context: [emptyBinding()],
+  }),
+};
+
+function mkEpisodeByName({ defs, triggers }, name) {
+  let now = defs.get(name);
+  let after = triggers.get(name);
+  return episode.sequence(
+    episode.concurrent(name, now.map(episode.branch)),
+    branchFuture.episode(episode.concurrent(`after ${name}`, after.map(episode.branch)))
+  );
 }
 
-function mkEventByName(rules, name) {
-  let now = rules.defs.get(name);
-  let after = rules.triggers.get(name);
-  let node = mkCompositeEvent({ name, value: now.map(mkTip) });
-  node.next = () => mkCompositeEvent({ name: `${name}'`, value: after.map(mkTip) });
-  return node;
-}
-
-// expr := done | literal(name) | sequence(a, b) | concurrent(a,b) | with-tuples(a, tuples)
-function beginEvent(rules, expr) {
-  let recurse = beginEvent[ap](rules);
+function beginEpisode(rules, expr) {
+  let recurse = beginEpisode[ap](rules);
   switch (expr.tag) {
-    case "done": {
-      // todo
-      return mkPrimitiveEvent({ value: [] });
-    }
     case "literal": {
-      return mkEventByName(rules, expr.name);
+      return mkEpisodeByName(rules, expr.name);
     }
     case "concurrent": {
       let { a, b } = expr;
-      return mkCompositeEvent({ name: false, value: [recurse(a), recurse(b)] });
+      return episode.concurrent(null, [recurse(a), recurse(b)]);
     }
     case "sequence": {
       let { a, b } = expr;
-      return mkCompositeEvent({
-        name: false,
-        value: [recurse(a)],
-        next: () => recurse(b),
-      });
+      return episode.sequence(recurse(a), sequenceFuture.expr(b));
     }
     case "with-tuples": {
       let { tuples, body } = expr;
-      return mkCompositeEvent({ name: false, value: [recurse(body)], tuples });
+      return episode.localTuples(recurse(body), tuples);
     }
   }
 }
@@ -186,7 +199,7 @@ function updatePathDb(db, context) {
   });
 }
 
-function updateTip({ db, rules, js }, data, tip, path) {
+function updateBranch({ db, rules, js }, data, branch, path) {
   function dbOfPath(path) {
     return addDbs([db, dbOfList([].concat(...path[mapMaybe]((node) => node.tuples)))]);
   }
@@ -197,21 +210,27 @@ function updateTip({ db, rules, js }, data, tip, path) {
     ">=": (l, r) => l.value >= r.value,
     "=": (l, r) => (l.value = r.value),
   };
-  let { episode, context } = tip;
-  //renderDb(db, "right");
-  switch (episode.tag) {
+  let { past, value, context } = branch;
+  assert(value.tag === "expr");
+  assert(value.value.length > 0);
+  let [expr, rest] = splitArray(value.value);
+  let newPast = past.concat([expr]);
+  let newBranch = { ...branch, value: branchFuture.expr(rest), past: newPast };
+
+  switch (expr.tag) {
     case "observation": {
       let db = dbOfPath(path);
-      context = af(evalQuery(db, js, [episode.pattern], context));
+      // these are fresh
+      context = af(evalQuery(db, js, [expr.pattern], context));
       return {
-        ...tip,
-        episode: episode.rest,
+        ...newBranch,
         context,
       };
     }
     case "modification": {
-      let { before, after, rest } = episode;
+      let { before, after } = expr;
       before = before.map((pattern) => ({ ...pattern, modifiers: ["delete"] }));
+      // these are fresh
       context = af(evalQuery(db, js, before, context));
       context.forEach((c) => {
         after.forEach((pattern) => {
@@ -219,45 +238,40 @@ function updateTip({ db, rules, js }, data, tip, path) {
         });
       });
       return {
-        ...tip,
-        episode: rest,
+        ...newBranch,
         context,
       };
     }
     case "subquery": {
-      let { query, name, rest } = episode;
+      let { query, name } = expr;
       let db = dbOfPath(path);
-      for (let c of context) {
+      context = context.map((c) => {
+        c = c.clone();
         c.set(name, mkSet(af(evalQuery(db, js, query, [c]))));
-      }
+        return c;
+      });
       return {
-        ...tip,
-        episode: rest,
+        ...newBranch,
         context,
       };
     }
     case "choose": {
-      let { rest } = episode;
       return {
-        ...tip,
-        episode: rest,
+        ...newBranch,
         context: data,
       };
     }
     case "count": {
-      let { rest, name } = episode;
-      context.forEach((c) => {
-        c.set(name, mkInt(c.get(name).value.length));
-      });
+      let { name } = expr;
+      context = context.map((c) => c.clone().set(name, mkInt(c.get(name).value.length)));
       return {
-        ...tip,
-        episode: rest,
+        ...newBranch,
         context,
       };
     }
     // todo: move to evalQuery
     case "binOp": {
-      let { operator, l, r, rest } = episode;
+      let { operator, l, r, rest } = expr;
       let fn = binaryOperatorFunctions[operator];
       context = context.filter((c) => {
         let vl = evalTerm(js, c, l);
@@ -265,96 +279,154 @@ function updateTip({ db, rules, js }, data, tip, path) {
         return fn(vl, vr);
       });
       return {
-        ...tip,
-        episode: rest,
+        ...newBranch,
         context,
       };
     }
+    // todo
     case "do": {
       updatePathDb(db, context);
-      return mkCompositeEvent({
-        value: context.map((binding) =>
-          beginEvent(rules, substituteEventExpr(js, binding, episode.value))
+      return {
+        ...newBranch,
+        value: branchFuture.episode(
+          episode.concurrent(
+            null,
+            context.map((binding) =>
+              beginEpisode(rules, substituteEpisodeExpr(js, binding, expr.value))
+            )
+          )
         ),
-      });
+      };
     }
     case "done": {
       updatePathDb(db, context);
-      return mkCompositeEvent({ value: [] });
+      return {
+        ...newBranch,
+      };
     }
     default:
       throw "";
   }
 }
 
-function updateTipById(program, root, id, data) {
-  return updateEvent(root, [], id, updateTip[ap](program, data));
+function updateBranchById(program, ep, id, data) {
+  return updateEpisode(ep, [], id, updateBranch[ap](program, data));
 }
 
-function eventCompleted(event) {
-  // todo
-  return (
-    (event.tag === "concurrent" && event.value.length === 0) ||
-    (event.tag === "primitive" && event.value.length === 0)
-  );
-}
-
-function reduceEvent(event) {
-  function go(event, options) {
-    switch (event.tag) {
-      case "concurrent": {
-        event.value = arrayUpdate(event.value, (e) => go(e, options)).filter((x) => x);
-        break;
-      }
-    }
-    if (eventCompleted(event)) {
-      if (event.name) console.log(`finishing ${event.name}`);
-      if (event.next) return go(event.next(), options);
-      return false;
-    } else {
-      if (event.tag === "tip") options.push(event);
-      return event;
-    }
-  }
-
-  let options = [];
-  event = go(event, options);
-  return [event, options];
-}
-
-// todo: single traversal function
-function pathToId(root, path, id) {
-  if (valEqual(root.id, id)) {
-    return path;
-  } else if (isComposite(root)) {
-    path = path.concat([root]);
-    for (let c of root.value) {
-      let c_ = pathToId(c, path, id);
-      if (c_) {
-        return c_;
-      }
-    }
-    return false;
+function updateSequenceFuture(f, path, id, fn) {
+  switch (f.tag) {
+    case "expr":
+      return f;
+    case "episode":
+      return sequenceFuture.episode(updateEpisode(f.value, path, id, fn));
   }
 }
 
-function updateEvent(root, path, id, fn) {
-  if (valEqual(root.id, id)) {
-    return fn(root, path);
-  } else if (isComposite(root)) {
-    path = path.concat([root]);
-    if (
-      forEach(root.value, (c, i) => {
-        let c_ = updateEvent(c, path, id, fn);
-        if (c_) {
-          root.value[i] = c_;
-          return true;
+// traverses whole tree looking for node matching `id`
+function updateEpisode(ep, path, id, fn) {
+  path = path.concat([ep]);
+  switch (ep.tag) {
+    case "concurrent": {
+      let { value } = ep;
+      return {
+        ...ep,
+        value: value.map((c) => updateEpisode(c, path, id, fn)),
+      };
+    }
+    case "sequence": {
+      let { value, rest } = ep;
+      return {
+        ...ep,
+        value: updateEpisode(value, path, id, fn),
+        rest: updateSequenceFuture(rest, path, id, fn),
+      };
+    }
+    case "branch": {
+      if (valEqual(ep.id, id)) return fn(ep, path);
+      let { value } = ep;
+      if (value.tag === "episode") {
+        return {
+          ...ep,
+          value: branchFuture.episode(updateEpisode(value.value, path, id, fn)),
+        };
+      }
+      return ep;
+    }
+    default:
+      throw "";
+  }
+}
+
+function isActive(e) {
+  switch (e.tag) {
+    case "concurrent": {
+      let { value } = e;
+      return value.some(isActive);
+    }
+    case "sequence": {
+      let { value, rest } = e;
+      return isActive(value) || (rest.tag === "episode" && isActive(rest.value));
+    }
+    case "branch": {
+      let { value } = e;
+      switch (value.tag) {
+        case "expr":
+          return value.value.length > 0;
+        case "episode":
+          return isActive(value.value);
+      }
+    }
+    default:
+      throw "";
+  }
+}
+
+function forceSequence(program, options, ep) {
+  let recurse = forceSequence[ap](program, options);
+  switch (ep.tag) {
+    case "concurrent": {
+      let { value } = ep;
+      return {
+        ...ep,
+        value: value.map(recurse),
+      };
+    }
+    case "sequence": {
+      let { value, rest } = ep;
+      value = recurse(value);
+      switch (rest.tag) {
+        case "expr":
+          if (!isActive(value)) {
+            let { rules } = program;
+            rest = sequenceFuture.episode(recurse(beginEpisode(rules, rest.value)));
+          }
+          break;
+        case "episode":
+          rest = sequenceFuture.episode(recurse(rest.value));
+      }
+      return {
+        ...ep,
+        value,
+        rest,
+      };
+    }
+    case "branch": {
+      let { value } = ep;
+      switch (value.tag) {
+        case "episode": {
+          return {
+            ...ep,
+            value: branchFuture.episode(recurse(value.value)),
+          };
         }
-      })
-    ) {
-      return root;
+        case "expr": {
+          if (isActive(ep)) options.push(ep);
+          return ep;
+        }
+      }
     }
-    return false;
+    default:
+      throw "";
   }
 }
 
@@ -371,7 +443,6 @@ function withMouseHighlight(elem) {
 function renderButton(content, { enter, exit, action, context }) {
   let e = d.create("div");
   e.appendChild(content);
-  //e.innerHTML = content;
   e = withMouseHighlight(e);
   e.addEventListener("mouseenter", () => {
     if (enter) enter();
@@ -388,35 +459,38 @@ function renderButton(content, { enter, exit, action, context }) {
 function createEpisodeElem(name, episodes) {
   if (name)
     return d.withClass(
-      d.flex("column", d.createText(name), d.flex("row", ...episodes)),
+      d.flex(
+        "column",
+        d.withClass(d.createText(name), "bold"),
+        d.flex("row", ...episodes)
+      ),
       "episode"
     );
   else return d.flex("row", ...episodes);
 }
 
-function ppEvent(expr) {
+function ppEpisodeExpr(expr) {
   switch (expr.tag) {
-    case "done": {
-      return "done";
-    }
     case "literal": {
       return `${expr.name}`;
     }
     case "concurrent": {
       let { a, b } = expr;
-      return `(${ppEvent(a)}, ${ppEvent(b)})`;
+      return `(${ppEpisodeExpr(a)}, ${ppEpisodeExpr(b)})`;
     }
     case "sequence": {
       let { a, b } = expr;
-      return `(${ppEvent(a)} -> ${ppEvent(b)})`;
+      return `(${ppEpisodeExpr(a)} -> ${ppEpisodeExpr(b)})`;
     }
     case "with-tuples": {
       let { tuples, body } = expr;
       tuples = ppQuery(tuples);
       let limit = 30;
       tuples = tuples.length < limit ? tuples : tuples.slice(0, limit - 3) + "..."; // limit length 20
-      return `[${ppEvent(body)} | ${tuples} ]`;
+      return `[${ppEpisodeExpr(body)} | ${tuples} ]`;
     }
+    default:
+      throw "";
   }
 }
 function ppQuantifier(quantifier) {
@@ -439,17 +513,17 @@ function ppEpisode(e) {
       return `${ppTerm(actor)} chooses ${ppQuantifier(quantifier)} ${name}`;
     }
     case "count": {
-      let { name, rest } = e;
-      return `${name} := count ${name}, ${ppEpisode(rest)}`;
+      let { name } = e;
+      return `${name} := count ${name}`;
     }
     case "do": {
-      return `do ${ppEvent(e.value)}`;
+      return `!do ${ppEpisodeExpr(e.value)}`;
     }
     case "done": {
-      return "done";
+      return "!done";
     }
     case "subquery": {
-      let { query, name, rest } = e;
+      let { query, name } = e;
       return `${name} := (${ppQuery(query)})`;
     }
     case "with-tuples": {
@@ -468,12 +542,6 @@ function ppEpisode(e) {
   }
 }
 
-function ppTip(tip) {
-  return d.flex("column", d.createText(ppContext(tip.context)), ppEpisode(tip.episode));
-}
-
-// map from object to element
-// render elements
 function renderSubsetSelector(map, hasValidExtension, k) {
   let e = d.create("div");
   let chosen = new Set();
@@ -513,15 +581,6 @@ function renderChoices(renderer, set, k) {
   return renderSubsetSelector(m, () => true, k);
 }
 
-function exprToList(expr) {
-  let result = [];
-  while (expr) {
-    result.push(expr);
-    expr = expr.rest;
-  }
-  return result;
-}
-
 // returns true if quantifier can be satisfied
 function checkQuantifierFailure(quantifier, options) {
   switch (quantifier.tag) {
@@ -559,103 +618,149 @@ function randomizeQuantifier(quantifier, options) {
   }
 }
 
-function renderTip({ action }, tip) {
-  let { episode, context } = tip;
+// todo: move transition logic out of render!
+function renderChoiceExpr(action, branch, expr) {
+  let { context } = branch;
+  let { actor, quantifier, name } = expr;
+  function getOptions(c) {
+    return c.get(name).value;
+  }
 
+  // todo: should be part of updateBranch
+  context = context.filter((c) => checkQuantifierFailure(quantifier, getOptions(c)));
+
+  // handles two actors: the randomizer, or the user
+  if (valEqual(actor, mkSym("rand"))) {
+    return renderButton(d.createText(ppEpisode(expr)), {
+      action: () => {
+        let data = [];
+        for (let c of context) {
+          // todo: display the choice in button
+          let v = randomizeQuantifier(quantifier, getOptions(c));
+          data.push(...v);
+        }
+        action(branch, data);
+      },
+    });
+  } else {
+    let sets = new Map();
+    return d.create(
+      "div",
+      ...context.map((c) => {
+        let options = getOptions(c);
+        return renderChoices(
+          (b) => d.createText(ppBinding(b)),
+          options,
+          // returns whether choice is valid; used to update picker element
+          (set, picker) => {
+            sets.set(c, set);
+            // join after all choices made
+            if (
+              sets.size === context.length &&
+              af(sets.values()).every((set) => checkQuantifier(quantifier, set, options))
+            ) {
+              let data = [];
+              for (let v of sets.values()) {
+                data.push(...Array.from(v));
+              }
+              action(branch, data);
+              // no need to return; element will be removed
+            }
+
+            if (!checkQuantifier(quantifier, set, options)) {
+              picker.classList.add("error");
+              return false;
+            } else {
+              picker.classList.remove("error");
+              return true;
+            }
+          }
+        );
+      })
+    );
+  }
+}
+
+function activeBranchHeadExpr(branch) {
+  return branch.value.value[0];
+}
+
+function renderBranch(action, active, branch) {
+  function renderPlain(expr) {
+    return d.createText(ppEpisode(expr));
+  }
   function renderHead(expr) {
     switch (expr.tag) {
       case "choose":
-        let { actor, quantifier, name } = expr;
-
-        function getOptions(c) {
-          return c.get(name).value;
-        }
-
-        // todo: should be part of updateTip
-        context = context.filter((c) =>
-          checkQuantifierFailure(quantifier, getOptions(c))
-        );
-
-        // handles two actors: the randomizer, or the user
-        if (valEqual(actor, mkSym("rand"))) {
-          return renderButton(d.createText(ppEpisode(expr)), {
-            action: () => {
-              let data = [];
-              for (let c of context) {
-                // todo: display the choice in button
-                let v = randomizeQuantifier(quantifier, getOptions(c));
-                data.push(...v);
-              }
-              action(tip, data);
-            },
-          });
-        } else {
-          let sets = new Map();
-          return d.create(
-            "div",
-            ...context.map((c) => {
-              let options = getOptions(c);
-              return renderChoices(
-                (b) => d.createText(ppBinding(b)),
-                options,
-                // returns whether choice is valid; used to update picker element
-                (set, picker) => {
-                  sets.set(c, set);
-                  // join after all choices made
-                  if (
-                    sets.size === context.length &&
-                    af(sets.values()).every((set) =>
-                      checkQuantifier(quantifier, set, options)
-                    )
-                  ) {
-                    let data = [];
-                    for (let v of sets.values()) {
-                      data.push(...Array.from(v));
-                    }
-                    action(tip, data);
-                    // no need to return; element will be removed
-                  }
-
-                  if (!checkQuantifier(quantifier, set, options)) {
-                    picker.classList.add("error");
-                    return false;
-                  } else {
-                    picker.classList.remove("error");
-                    return true;
-                  }
-                }
-              );
-            })
-          );
-        }
+        return renderChoiceExpr(action, branch, expr);
       default:
-        return renderButton(d.createText(ppEpisode(expr)), {
-          action: () => action(tip, null),
+        return renderButton(renderPlain(expr), {
+          action: () => action(branch, null),
         });
     }
   }
+  function renderFuture(f) {
+    switch (f.tag) {
+      case "expr": {
+        if (f.value.length === 0) return [];
+        let [h, t] = splitArray(f.value);
+        return [
+          d.createText("------"),
+          // active used only here
+          active ? renderHead(h) : renderPlain(h),
+          d.withClass(d.create("div", ...t.map(renderPlain)), "faint"),
+        ];
+      }
+      case "episode": {
+        return [renderEpisode(action, active, f.value)];
+      }
+      default:
+        throw "";
+    }
+  }
 
-  return d.flex(
-    "column",
-    d.createText(context.map(ppBinding).join("; ")),
-    d.createText("------"),
-    renderHead(episode),
-    d.withClass(
-      d.create("div", ...exprToList(episode.rest).map((e) => d.createText(ppEpisode(e)))),
-      "faint"
-    )
-  );
+  let { past, value, context } = branch;
+
+  let pastElems =
+    past.length === 0
+      ? []
+      : past
+          .map((e) => d.withClass(renderPlain(e), "faint"))
+          .concat(d.createText("------"));
+
+  let bindingElem = d.createText(context.map(ppBinding).join("; "));
+  bindingElem = isActive(branch) ? bindingElem : d.withClass(bindingElem, "faint");
+  return d.flex("column", ...pastElems, bindingElem, ...renderFuture(value));
 }
 
-// episode := { tag: ('concurrent' | 'tip'), value: Array episode, ?next: () -> episode, ?tuples: db }
-function renderState(root, ep) {
-  let { tag } = ep;
-  switch (tag) {
-    case "concurrent": {
-      return createEpisodeElem(ep.name, ep.value.map(renderState[ap](root)));
+function renderEpisode(action, active, ep) {
+  function renderFuture(action, active, e) {
+    switch (e.tag) {
+      case "expr": {
+        // cannot be active
+        return d.createText(ppEpisodeExpr(e.value));
+      }
+      case "episode": {
+        return renderEpisode(action, active, e.value);
+      }
     }
-    case "tip": {
-      return d.withClass(renderTip(root, ep), "margin", "episode");
+  }
+
+  switch (ep.tag) {
+    case "concurrent": {
+      return createEpisodeElem(ep.name, ep.value.map(renderEpisode[ap](action, active)));
+    }
+    case "sequence": {
+      let { value, rest } = ep;
+      let firstActive = isActive(value);
+      return d.flex(
+        "column",
+        renderEpisode(action, active && firstActive, value),
+        renderFuture(action, active && !firstActive, rest)
+      );
+    }
+    case "branch": {
+      return d.withClass(renderBranch(action, active, ep), "margin", "episode");
     }
     default:
       throw "";
@@ -685,68 +790,22 @@ function mkWorldRender(tokens, containments, ignored) {
     }
   };
 }
-function renderWorld(tuples, app) {
-  tuples = af(tuples);
-  let elements = new DelayedMap();
-  //console.log("!!!!!!!!!", af(tuples));
 
-  function mk(label, s) {
-    //console.log("making: ", s);
-    let e = d.createText(`${label}: ${ppTerm(s)}`);
-    app.appendChild(e);
-    elements.set(ppTerm(s), e);
-    return e;
-  }
-
-  for (let [tag, tuple] of tuples) {
-    //console.log("!!!!!!!!!!!!!!!!!!!!!!!", tag, tuple);
-    switch (tag) {
-      case "spirit": {
-        let [s] = tuple;
-        d.withClass(mk(tag, s), "spirit");
-        break;
-      }
-      case "land": {
-        let [l] = tuple;
-        d.withClass(mk(tag, l), "land");
-        break;
-      }
-      case "adjacent": {
-        let [a, b] = tuple;
-        break;
-      }
-      case "located": {
-        let [a, b] = tuple;
-        elements.get(ppTerm(a), (a) => {
-          elements.get(ppTerm(b), (b) => {
-            d.childParent(a, b);
-          });
-        });
-        break;
-      }
-    }
-  }
-}
-
-function splitArray(arr) {
-  assert(arr.length > 0);
-  return [arr[0], arr.slice(1)];
-}
-
-function fixBody(ruleBody) {
-  if (ruleBody.length === 0) return { tag: "done" };
-  let [head, tail] = splitArray(ruleBody);
-  if (head.tag === "done" || head.tag === "do") return head;
-  head.rest = fixBody(tail);
-  return head;
-}
 function parseProgram(text) {
+  function fixBody(body) {
+    console.log(body);
+    if (body.length === 0) return [{ tag: "done" }];
+    let last = body[body.length - 1];
+    if (last.tag !== "done" && last.tag !== "do") return body.concat([{ tag: "done" }]);
+    return body;
+  }
   let exprs = parseNonterminal("program", text);
   let defs = new ArrayMap();
   let triggers = new ArrayMap();
   for (let e of exprs) {
     let { type, head, body } = e;
     body = fixBody(body);
+    console.log(body);
     switch (type) {
       case "def": {
         defs.add(head, body);
@@ -763,6 +822,7 @@ function parseProgram(text) {
   return { defs, triggers };
 }
 
+// todo: working tutorial examples
 function parseExamples() {
   console.log("parse program: ", parseNonterminal("program", programText));
   console.log("parse ep", parseNonterminal("episode_expr", "do ."));
@@ -772,8 +832,8 @@ function parseExamples() {
   console.log("parse ep", e`do turn`);
 }
 
+// todo: working tutorial examples
 function defunctProgramTexts() {
-  // todo: these don't parse
   let programText1 = `
 game: () ! (land a, land b, spirit s,
   card x, cost x 1, green x 1, red x 1,
@@ -812,10 +872,8 @@ turn -> do turn.
 }
 
 function newMain(prog) {
-  let pe = parseNonterminal[ap]("episode_expr");
-  let e = toTag(pe); // ([str]) => pe(str);
-
-  let ev, options;
+  let ev;
+  let options = [];
   let rules = parseProgram(prog);
   let db = emptyDb();
   let program = {
@@ -825,28 +883,46 @@ function newMain(prog) {
       add: (a, b) => mkInt(a.value + b.value),
     },
   };
-  ev = mkEventByName(rules, "game");
+  ev = mkEpisodeByName(rules, "game");
 
   let app;
   let log = d.getId("log");
 
-  function updateTipAction(tip, data) {
-    ev = updateTipById(program, ev, tip.id, data);
+  function updateOptions() {
+    options = [];
+    ev = forceSequence(program, options, ev);
     updateUI();
   }
-  //let render = mkWorldRender(["spirit", "land"], ["located"], ["adjacent"]);
-  let render = mkWorldRender(["hand", "deck", "card", "rat"], ["located"], []);
-  function updateUI() {
-    [ev, options] = reduceEvent(ev);
-    if (app) d.remove(app);
-    app = d.createChild("div", log);
 
-    if (ev) d.childParent(renderState({ action: updateTipAction }, ev), app);
-    render(tuplesOfDb(db), app);
-    d.childParent(d.renderJSON(options), app);
+  function updateBranchAction(branch, data) {
+    ev = updateBranchById(program, ev, branch.id, data);
+    updateOptions();
   }
 
-  updateUI();
+  let render = mkWorldRender(["hand", "deck", "card", "rat"], ["located"], []);
+  function updateUI() {
+    if (app) d.remove(app);
+    app = d.createChild("div", log);
+    if (ev) {
+      app.appendChild(renderEpisode(updateBranchAction, true, ev));
+    }
+    render(tuplesOfDb(db), app);
+    d.childParent(d.renderJSON(options), app);
+    console.log(options.length);
+  }
+
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "j") {
+      if (options.length > 0) {
+        // todo: allow random choice here
+        if (activeBranchHeadExpr(options[0]).tag !== "choose")
+          updateBranchAction(options[0], null);
+        else console.log("click the choice!");
+      } else console.log("no options");
+    } else console.log(ev);
+  });
+
+  updateOptions();
 }
 
 window.onload = () => {
@@ -857,32 +933,38 @@ window.onload = () => {
 
 /* todo now
 
+fix after turn nesting issue
+
+undo
+  store:
+    map: node id -> the state before it was clicked
+      click old entry to undo
+    array of states
+      'k' to go back one
+  key for super-undo
+
 simple
+  flash element when it's activated by 'j'
   batch query parts into one step
   ! run until choice?
+  add a way to make arbitrary db edit (or spawn/begin episode)
 
-show history
+replay log
+  issue with id stability?
+
 early exit queries that can't match
-
-interface
-  record trail
-  undo
+  fix "1 out of n match" visual issue
 
 chooser applied to other ui elements
 ? `new` operation
 grid
 datalog?
 
-cleanup
-  fix terminology (episode/expr/tip)
-
 count
   not, comparisons
 ? allow to pick invalid entities but explain why not included in query
-fix "turn'" nesting
 actors
   default, helper
-
 */
 
 /* later plan

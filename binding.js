@@ -33,6 +33,7 @@ class Binding {
   // shadows parent
   set(key, val) {
     this.substitution.set(key, val);
+    return this;
   }
   get(key) {
     let r = this.substitution.get(key);
