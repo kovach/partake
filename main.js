@@ -24,7 +24,7 @@ import {
   cloneDb,
 } from "./join.js";
 
-import { assert, ArrayMap, DelayedMap } from "./collections.js";
+import { assert, splitArray, ArrayMap, DelayedMap } from "./collections.js";
 
 import * as d from "./dom.js";
 
@@ -39,27 +39,6 @@ Function.prototype[ap] = function (...given) {
 Array.prototype[mapMaybe] = function (f) {
   return this.map(f).filter((x) => x);
 };
-function toTag(f) {
-  return ([str]) => f(str);
-}
-function arrayUpdate(arr, f) {
-  for (let i = 0; i < arr.length; i++) {
-    arr[i] = f(arr[i]);
-  }
-  return arr;
-}
-// implement early exit behavior
-function forEach(arr, f) {
-  for (let i = 0; i < arr.length; i++) {
-    if (f(arr[i], i)) return true;
-  }
-  return false;
-}
-
-function splitArray(arr) {
-  assert(arr.length > 0);
-  return [arr[0], arr.slice(1)];
-}
 
 function parseNonterminal(nt, text) {
   let assertAmbiguity = true;
@@ -163,7 +142,8 @@ function mkEpisodeByName({ defs, triggers }, name) {
   let after = triggers.get(name);
   return episode.sequence(
     episode.concurrent(name, now.map(episode.branch)),
-    branchFuture.episode(episode.concurrent(`after ${name}`, after.map(episode.branch)))
+    branchFuture.episode(episode.concurrent(null, after.map(episode.branch)))
+    //branchFuture.episode(episode.concurrent(`after ${name}`, after.map(episode.branch)))
   );
 }
 
@@ -724,6 +704,12 @@ function renderBranch(action, active, branch) {
           .map((e) => d.withClass(renderPlain(e), "faint"))
           .concat(d.createText("------"));
 
+  let bindingElems = context.map((c) => {
+    let e = d.createText(ppBinding(c));
+    return isActive(branch) ? e : d.withClass(e, "faint");
+  });
+  return d.flex("column", ...pastElems, ...bindingElems, ...renderFuture(value));
+
   let bindingElem = d.createText(context.map(ppBinding).join("; "));
   bindingElem = isActive(branch) ? bindingElem : d.withClass(bindingElem, "faint");
   return d.flex("column", ...pastElems, bindingElem, ...renderFuture(value));
@@ -901,6 +887,7 @@ function newMain(prog) {
   function updateUI() {
     if (app) d.remove(app);
     app = d.createChild("div", log);
+
     if (now) {
       app.appendChild(renderEpisode(updateBranchAction, true, now));
     }
@@ -948,7 +935,9 @@ undo
   key for super-undo
 
 simple
+  factor out update logic from renderChoiceExpr. fix j for 'rand
   flash element when it's activated by 'j'
+    map id to element
   batch query parts into one step
   ! run until choice?
   add a way to make arbitrary db edit (or spawn/begin episode)
@@ -970,6 +959,8 @@ count
 ? allow to pick invalid entities but explain why not included in query
 actors
   default, helper
+unary predicate as variable syntax
+? mutation inside choice
 */
 
 /* later plan

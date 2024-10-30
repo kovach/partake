@@ -1,5 +1,32 @@
+/* Utility functions and collection types. */
+
 function assert(cond, msg = "") {
   if (!cond) throw new Error(msg);
+}
+
+// use like this:
+//   let x = toTag(f)
+//   ... x`some string` ...
+function toTag(f) {
+  return ([str]) => f(str);
+}
+function arrayUpdate(arr, f) {
+  for (let i = 0; i < arr.length; i++) {
+    arr[i] = f(arr[i]);
+  }
+  return arr;
+}
+// implement early exit behavior
+function forEach(arr, f) {
+  for (let i = 0; i < arr.length; i++) {
+    if (f(arr[i], i)) return true;
+  }
+  return false;
+}
+
+function splitArray(arr) {
+  assert(arr.length > 0);
+  return [arr[0], arr.slice(1)];
 }
 
 Map.prototype.map = function (f) {
@@ -65,4 +92,4 @@ class DelayedMap {
     }
   }
 }
-export { assert, MonoidMap, ArrayMap, DelayedMap };
+export { assert, splitArray, MonoidMap, ArrayMap, DelayedMap };
