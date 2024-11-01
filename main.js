@@ -357,7 +357,10 @@ function isActive(e) {
   }
 }
 
-function forceSequence(program, options, ep) {
+// the main purpose of this is to `beginEpisode` when the first part of a sequence has completed
+// the secondary purpose is to accumulate all the branches that are active into the options array.
+// returns updated version of `ep` argument
+function forceSequence(program, /*output:*/ options, ep) {
   let recurse = forceSequence[ap](program, options);
   switch (ep.tag) {
     case "concurrent": {
@@ -683,7 +686,7 @@ function renderBranch(action, active, branch) {
         return [
           d.createText("------"),
           // active used only here
-          active ? renderHead(h) : renderPlain(h),
+          active ? storeEpisodeElem(branch.id, renderHead(h)) : renderPlain(h),
           d.withClass(d.create("div", ...t.map(renderPlain)), "faint"),
         ];
       }
@@ -709,10 +712,12 @@ function renderBranch(action, active, branch) {
     return isActive(branch) ? e : d.withClass(e, "faint");
   });
   return d.flex("column", ...pastElems, ...bindingElems, ...renderFuture(value));
+}
 
-  let bindingElem = d.createText(context.map(ppBinding).join("; "));
-  bindingElem = isActive(branch) ? bindingElem : d.withClass(bindingElem, "faint");
-  return d.flex("column", ...pastElems, bindingElem, ...renderFuture(value));
+let episodeElements = new Map();
+function storeEpisodeElem(id, elem) {
+  episodeElements.set(id, elem);
+  return elem;
 }
 
 function renderEpisode(action, active, ep) {
@@ -890,6 +895,13 @@ function newMain(prog) {
 
     if (now) {
       app.appendChild(renderEpisode(updateBranchAction, true, now));
+
+      if (options.length > 0) {
+        let id = options[0].id;
+        let elem = episodeElements.get(id);
+        assert(elem);
+        elem.classList.add("hl");
+      }
     }
     render(tuplesOfDb(program.db), app);
     d.childParent(d.renderJSON(options), app);
@@ -901,9 +913,9 @@ function newMain(prog) {
     if (ev.key === "j") {
       if (options.length > 0) {
         // todo: allow random choice here
-        if (activeBranchHeadExpr(options[0]).tag !== "choose")
+        if (activeBranchHeadExpr(options[0]).tag !== "choose") {
           updateBranchAction(options[0], null);
-        else console.log("click the choice!");
+        } else console.log("click the choice!");
       } else console.log("no options");
     } else if (ev.key === "k") {
       if (history.length > 0) {
@@ -936,8 +948,6 @@ undo
 
 simple
   factor out update logic from renderChoiceExpr. fix j for 'rand
-  flash element when it's activated by 'j'
-    map id to element
   batch query parts into one step
   ! run until choice?
   add a way to make arbitrary db edit (or spawn/begin episode)
