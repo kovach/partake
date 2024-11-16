@@ -203,6 +203,28 @@ function updateBranch({ db, rules, js }, data, branch, path) {
         context,
       };
     }
+    case "retract": {
+      let { query } = expr;
+      query = query.map((pattern) => ({ ...pattern, modifiers: ["delete"] }));
+      context = af(evalQuery(db, js, query, context)); // these are fresh
+      return {
+        ...newBranch,
+        context,
+      };
+    }
+    case "assert": {
+      let { tuples } = expr;
+      context.forEach((c) => {
+        tuples.forEach((pattern) => {
+          c.notes.add("add", makeTuple(js, c, pattern));
+        });
+      });
+      return {
+        ...newBranch,
+        context,
+      };
+    }
+    // todo: remove
     case "modification": {
       let { before, after } = expr;
       before = before.map((pattern) => ({ ...pattern, modifiers: ["delete"] }));
@@ -357,8 +379,8 @@ function isActive(e) {
   }
 }
 
-// the main purpose of this is to `beginEpisode` when the first part of a sequence has completed
-// the secondary purpose is to accumulate all the branches that are active into the options array.
+// The main purpose of this is to `beginEpisode` when the first part of a sequence has completed.
+// The secondary purpose is to accumulate all the branches that are active into the options array.
 // returns updated version of `ep` argument
 function forceSequence(program, /*output:*/ options, ep) {
   let recurse = forceSequence[ap](program, options);
@@ -515,6 +537,14 @@ function ppEpisode(e) {
     case "binOp": {
       let { operator, l, r } = e;
       return `${ppTerm(l)} ${operator} ${ppTerm(r)}`;
+    }
+    case "retract": {
+      let { query } = e;
+      return `-(${ppQuery(query)})`;
+    }
+    case "assert": {
+      let { tuples } = e;
+      return `+(${ppQuery(tuples)})`;
     }
     default:
       throw "";
