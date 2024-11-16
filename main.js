@@ -936,9 +936,24 @@ window.onload = () => {
     .then((text) => newMain(text));
 };
 
-/* todo now
+/* todo
+
+immediate mutation
+  ? change syntax: no/yes, -/+
+nested query
+intermediate do
+
+chooser applied to other ui elements
+? `new` operation
+grid
+datalog?
+
+unary predicate as variable syntax
 
 fix after turn nesting issue
+
+early exit queries that can't match
+  fix "1 out of n match" visual issue
 
 undo
   store:
@@ -956,28 +971,14 @@ simple
 replay log
   issue with id stability?
 
-early exit queries that can't match
-  fix "1 out of n match" visual issue
-
-chooser applied to other ui elements
-? `new` operation
-grid
-datalog?
-
 count
   not, comparisons
 ? allow to pick invalid entities but explain why not included in query
 actors
-  default, helper
-unary predicate as variable syntax
+  default (single choice, null choice), helper
 ? mutation inside choice
 */
 
 /* later plan
-mouseenter tuple -> highlight icons
-declarative ui
-  land l, token t, in t l
-    just handle with parents
 value/dynamic breakpoint?
-default actions (handle unique choice)
 */
