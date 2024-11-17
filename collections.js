@@ -43,12 +43,14 @@ class MonoidMap {
     this.zero = zero;
     this.plus = plus;
   }
+  reset(key) {
+    let v = this.zero();
+    this.map.set(key, v);
+    return v;
+  }
   get(key) {
     let v = this.map.get(key);
-    if (v === undefined) {
-      v = this.zero();
-      this.map.set(key, v);
-    }
+    if (v === undefined) v = this.reset(key);
     return v;
   }
   add(key, value) {

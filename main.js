@@ -171,7 +171,9 @@ function beginEpisode(rules, expr) {
 function updatePathDb(db, context) {
   context.forEach((c) => {
     c.notes.get("delete").forEach(([tag, tuple]) => dbAddTuple(db, tag, tuple, -1));
+    c.notes.reset("delete");
     c.notes.get("add").forEach(([tag, tuple]) => dbAddTuple(db, tag, tuple, +1));
+    c.notes.reset("add");
   });
 }
 
@@ -207,6 +209,7 @@ function updateBranch({ db, rules, js }, data, branch, path) {
       let { query } = expr;
       query = query.map((pattern) => ({ ...pattern, modifiers: ["delete"] }));
       context = af(evalQuery(db, js, query, context)); // these are fresh
+      updatePathDb(db, context);
       return {
         ...newBranch,
         context,
@@ -219,22 +222,7 @@ function updateBranch({ db, rules, js }, data, branch, path) {
           c.notes.add("add", makeTuple(js, c, pattern));
         });
       });
-      return {
-        ...newBranch,
-        context,
-      };
-    }
-    // todo: remove
-    case "modification": {
-      let { before, after } = expr;
-      before = before.map((pattern) => ({ ...pattern, modifiers: ["delete"] }));
-      // these are fresh
-      context = af(evalQuery(db, js, before, context));
-      context.forEach((c) => {
-        after.forEach((pattern) => {
-          c.notes.add("add", makeTuple(js, c, pattern));
-        });
-      });
+      updatePathDb(db, context);
       return {
         ...newBranch,
         context,
@@ -283,7 +271,7 @@ function updateBranch({ db, rules, js }, data, branch, path) {
     }
     // todo
     case "do": {
-      updatePathDb(db, context);
+      //updatePathDb(db, context);
       return {
         ...newBranch,
         value: branchFuture.episode(
@@ -297,7 +285,7 @@ function updateBranch({ db, rules, js }, data, branch, path) {
       };
     }
     case "done": {
-      updatePathDb(db, context);
+      //updatePathDb(db, context);
       return {
         ...newBranch,
       };
@@ -529,10 +517,6 @@ function ppEpisode(e) {
     }
     case "with-tuples": {
       return `[${ppEpisode(e.body)} | ${ppQuery(e.tuples)}]`;
-    }
-    case "modification": {
-      let { before, after } = e;
-      return `(${ppQuery(before)}) => (${ppQuery(after)})`;
     }
     case "binOp": {
       let { operator, l, r } = e;
@@ -968,8 +952,6 @@ window.onload = () => {
 
 /* todo
 
-immediate mutation
-  ? change syntax: no/yes, -/+
 nested query
 intermediate do
 
