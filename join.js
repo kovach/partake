@@ -5,10 +5,6 @@ const str = (e) => JSON.stringify(e, null, 2);
 const pp = (x) => console.log(str(x));
 const af = Array.from;
 
-function scrollBody() {
-  window.scrollTo(0, document.body.scrollHeight);
-}
-
 // todo: db class
 function emptyDb() {
   return new Map();

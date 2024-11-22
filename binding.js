@@ -1,5 +1,17 @@
 import { ArrayMap } from "./collections.js";
 
+function cloneTerm(term) {
+  switch (term.tag) {
+    case "var":
+    case "sym":
+    case "int":
+      return structuredClone(term);
+    case "set":
+      return { tag: "set", value: term.value.map((b) => b.clone()) };
+    default:
+      throw "";
+  }
+}
 class Binding {
   substitution = new Map();
   notes = new ArrayMap();
@@ -22,7 +34,7 @@ class Binding {
     let m = new Binding();
     m.parent = this.parent;
     m.notes = new ArrayMap(structuredClone(Array.from(this.notes.map.entries())));
-    m.substitution = this.substitution.map(structuredClone);
+    m.substitution = this.substitution.map(cloneTerm);
     return m;
   }
 

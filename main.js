@@ -40,6 +40,10 @@ Array.prototype[mapMaybe] = function (f) {
   return this.map(f).filter((x) => x);
 };
 
+function scrollBody() {
+  window.scrollTo(0, document.body.scrollHeight);
+}
+
 function parseNonterminal(nt, text) {
   let assertAmbiguity = true;
   let g = nearley.Grammar.fromCompiled(grammar);
@@ -771,14 +775,14 @@ function renderEpisode(action, active, ep) {
 function mkWorldRender(tokens, containments, ignored) {
   return (tuples, app) => {
     function mk(label, s) {
-      let e = d.createText(`${label}: ${ppTerm(s)}`);
+      let e = d.createText(`${label}: ${s.map(ppTerm).join(" ")}`);
       app.appendChild(e);
-      elements.set(ppTerm(s), e);
+      elements.set(ppTerm(s[s.length - 1]), e);
       return e;
     }
     let elements = new DelayedMap();
     for (let [tag, tuple] of tuples) {
-      if (tokens.includes(tag)) d.withClass(mk(tag, tuple[0]), tag);
+      if (tokens.includes(tag)) d.withClass(mk(tag, tuple), tag);
       else if (containments.includes(tag)) {
         let [a, b] = tuple;
         elements.get(ppTerm(a), (a) => {
@@ -804,6 +808,7 @@ function parseProgram(text) {
   let defs = new ArrayMap();
   let triggers = new ArrayMap();
   for (let e of exprs) {
+    if (e === null) continue;
     let { type, head, body } = e;
     body = fixBody(body);
     console.log(body);
@@ -901,7 +906,12 @@ function newMain(prog) {
     updateOptions();
   }
 
-  let render = mkWorldRender(["hand", "deck", "card", "rat"], ["located"], []);
+  let render = mkWorldRender(
+    ["hand", "deck", "card", "play-area", "choose-area", "player"],
+    ["located"],
+    []
+  );
+  //let render = mkWorldRender(["hand", "deck", "card", "rat", "snack"], ["located"], []);
 
   function updateUI() {
     if (app) d.remove(app);
@@ -918,8 +928,9 @@ function newMain(prog) {
       }
     }
     render(tuplesOfDb(program.db), app);
-    d.childParent(d.renderJSON(options), app);
+    //d.childParent(d.renderJSON(options), app);
     console.log(options.length);
+    scrollBody();
     //renderDb(program.db, app);
   }
 
@@ -945,12 +956,17 @@ function newMain(prog) {
 }
 
 window.onload = () => {
-  fetch("sf.mm")
+  fetch("si.mm")
     .then((res) => res.text())
     .then((text) => newMain(text));
 };
 
 /* todo
+
+range function
+header containing viz instructions
+insert to db while running
+  live-reload rules into episode
 
 nested query
 intermediate do

@@ -56,8 +56,6 @@ quantifier -> number {% (d) => ({tag: 'eq', count: d[0]}) %}
 quantifier -> "~" _ number {% (d) => ({tag: 'amapLimit', count: d[2]}) %}
 quantifier -> "max" _ number {% (d) => ({tag: 'limit', count: d[2]}) %}
 
-episode_expr -> "!done" {% () => [{tag: "done"}] %}
-episode_expr -> "!do" __ event_expr {% (d) => [{tag: "do", value: d[2]}] %}
 episode_expr -> relation {% (d) => [{ tag: "observation", pattern: d[0]}] %}
 episode_expr -> op pureQuery cp _ "=>" _ op pureQuery cp
   {% (d) => [{ tag: "modification", before: d[1], after: d[7] }] %}
@@ -67,14 +65,16 @@ episode_expr -> "+(" _ pureQuery cp
   {% (d) => [{tag: "assert", tuples: d[2] }] %}
 episode_expr -> term __ "chooses" __ quantifier __ op pureQuery cp
   {% (d) => [{ tag: "subquery", query: d[7], name: '?'},
-             { tag: "choose", actor: d[0], quantifier: d[4], name: '?' }]
-  %}
+             { tag: "choose", actor: d[0], quantifier: d[4], name: '?' }] %}
 episode_expr -> identifier _ ":=" _ "count" _ op pureQuery cp
   {% (d) => [{ tag: "subquery", query: d[7], name: d[0] },
-             { tag: "count", name: d[0] }]
-  %}
+             { tag: "count", name: d[0] }] %}
 episode_expr -> term _ binOp _ term
   {% (d) => [{tag: 'binOp', operator: d[2], l: d[0], r: d[4]}] %}
+episode_expr -> "!done" {% () => [{tag: "done"}] %}
+episode_expr -> "!do" __ event_expr {% (d) => [{tag: "do", value: d[2]}] %}
+
+episode_expr -> op episode_list cp {% (d) => [{tag: "subbranch", query: d[1], name: '?'}] %}
 
 episode_list -> episode_expr (_ ","):? {% (d) => d[0] %}
 episode_list -> episode_expr comma episode_list {% (d) => d[0].concat(d[2]) %}
@@ -85,6 +85,7 @@ rule_body -> null {% () => [] %}
 rule_separator -> _ ":" _ {% () => 'def' %}
 rule_separator -> _ "->" _ {% () => 'trigger' %}
 
+rule -> "#" [^\n]:* [\n] {% () => null %}
 rule -> identifier rule_separator rule_body _ "."
   {% (d) => ({head: d[0], type: d[1], body: d[2] }) %}
 
