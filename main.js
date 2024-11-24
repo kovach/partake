@@ -9,6 +9,7 @@ import {
   evalTerm,
   evalQuery,
   freshId,
+  uniqueInt,
   valEqual,
   emptyBinding,
   ppQuery,
@@ -21,6 +22,7 @@ import {
   mkSet,
   tuplesOfDb,
   mkSym,
+  mkVar,
   cloneDb,
 } from "./join.js";
 
@@ -796,12 +798,135 @@ function mkWorldRender(tokens, containments, ignored) {
   };
 }
 
+function dotExpandTerm(t) {
+  switch (t.tag) {
+    case "var":
+    case "sym":
+    case "int":
+    case "call":
+      return { prefix: [], term: t };
+    case "dot":
+      let { left, right } = t;
+
+      //  .right case (left is null): generate a unary clause `right v`
+      let prefix = [];
+      let terms = [];
+      // left.rright case: generate a binary clause `right left v`
+      if (left) {
+        let l = dotExpandTerm(left);
+        prefix = l.prefix;
+        terms = [l.term];
+      }
+      let v = mkVar("?" + uniqueInt());
+      terms.push(v);
+      prefix.push({ tag: right, terms });
+
+      return {
+        prefix,
+        term: v,
+      };
+
+    //case "set":
+    default:
+      throw "todo";
+  }
+}
+
+function dotExpandRelation(p) {
+  let prefix = [];
+  let terms = [];
+  p.terms.forEach((term) => {
+    let { prefix: p, term: t } = dotExpandTerm(term);
+    prefix = prefix.concat(p);
+    terms.push(t);
+  });
+  return { prefix, relation: { ...p, terms } };
+}
+
+function dotExpandQuery(q) {
+  let prefix = [];
+  let relations = [];
+  q.forEach((pattern) => {
+    let { prefix: p, relation: r } = dotExpandRelation(pattern);
+    prefix = prefix.concat(p);
+    relations.push(r);
+  });
+  return { prefix, query: relations };
+}
+function dotExpandEpisode(expr) {
+  let recurse = dotExpandEpisode;
+  let mk = (prefix, episode) => ({ prefix, episode });
+  switch (expr.tag) {
+    case "done": {
+      return mk([], expr);
+    }
+    case "literal": {
+      return mk([], expr);
+    }
+    case "concurrent":
+    case "sequence": {
+      let { a, b } = expr;
+      let ra = recurse(a);
+      let rb = recurse(b);
+      return mk(ra.prefix.concat(rb.prefix), { ...expr, a: ra.episode, b: rb.episode });
+    }
+    case "with-tuples": {
+      let { tuples, body } = expr;
+      // may update binding:
+      let { prefix, query } = dotExpandQuery(tuples);
+      let r = recurse(body);
+      return mk(r.prefix.concat(prefix), { ...expr, tuples: query, body: r.episode });
+    }
+    default:
+      throw "";
+  }
+}
+
 function parseProgram(text) {
-  function fixBody(body) {
+  function appendDone(body) {
     console.log(body);
     if (body.length === 0) return [{ tag: "done" }];
     let last = body[body.length - 1];
     if (last.tag !== "done" && last.tag !== "do") return body.concat([{ tag: "done" }]);
+    return body;
+  }
+  function fixBody(body) {
+    let fix = (prefix) => prefix.map((pattern) => ({ tag: "observation", pattern }));
+    body = appendDone(body);
+    body = body
+      .map((p) => {
+        switch (p.tag) {
+          case "observation": {
+            let { prefix, relation } = dotExpandRelation(p.pattern);
+            return fix(prefix).concat([{ tag: "observation", pattern: relation }]);
+          }
+          // todo retract
+          case "retract": {
+            let { prefix, query } = dotExpandQuery(p.query);
+            return fix(prefix).concat([{ tag: "retract", query: query }]);
+          }
+          case "assert": {
+            let { prefix, query } = dotExpandQuery(p.tuples);
+            return fix(prefix).concat([{ tag: "assert", tuples: query }]);
+          }
+          case "subquery": {
+            let { name } = p;
+            let { prefix, query } = dotExpandQuery(p.query);
+            return [{ tag: "subquery", name, query: prefix.concat(query) }];
+          }
+          case "choose":
+            return [p];
+          case "do": {
+            let { prefix, episode } = dotExpandEpisode(p.value);
+            return fix(prefix).concat([{ tag: "do", value: episode }]);
+          }
+          case "done":
+            return [p];
+          default:
+            throw "";
+        }
+      })
+      .flat(1);
     return body;
   }
   let exprs = parseNonterminal("program", text);
@@ -963,38 +1088,29 @@ window.onload = () => {
 
 /* todo
 
-range function
-header containing viz instructions
-insert to db while running
-  live-reload rules into episode
-
-nested query
+? atomic rules
 intermediate do
+live-reload rules into episode
+  editor?
+header containing viz instructions
+range function
+insert to db while running
+nested query
 
 chooser applied to other ui elements
 ? `new` operation
 grid
 datalog?
 
-unary predicate as variable syntax
-
 fix after turn nesting issue
 
 early exit queries that can't match
   fix "1 out of n match" visual issue
 
-undo
-  store:
-    map: node id -> the state before it was clicked
-      click old entry to undo
-  key for super-undo
-
 simple
   factor out update logic from renderChoiceExpr. fix j for 'rand
   batch query parts into one step
   ! run until choice?
-  add a way to make arbitrary db edit (or spawn/begin episode)
-  ? recursive check for object equality (prevent accidental sharing)
 
 replay log
   issue with id stability?

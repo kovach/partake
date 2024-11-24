@@ -252,8 +252,11 @@ function ppContext(context) {
 }
 
 let globalIdCounter = 0;
+function uniqueInt() {
+  return globalIdCounter++;
+}
 function freshId() {
-  return { tag: "sym", value: globalIdCounter++ };
+  return { tag: "sym", value: uniqueInt() };
 }
 
 function substitute(js, binding, terms) {
@@ -291,6 +294,7 @@ export {
   emptyBinding,
   evalQuery,
   freshId,
+  uniqueInt,
   substitute,
   ppQuery,
   ppTerm,

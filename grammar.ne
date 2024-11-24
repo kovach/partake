@@ -9,12 +9,12 @@ cp -> _ ")" {% () => null %}
 
 number -> [0-9]:+ {% d => parseInt(d[0].join("")) %}
 
-# var, Var
+# a2-bc'
 identifier -> [a-zA-Z_] [a-zA-Z0-9'_-]:*  {% (d) => d[0] + d[1].join("") %}
+# _var, Var
 var -> identifier {% id %}
 
-# a2bc'
-predicate -> identifier {% id %} # [a-z] [a-zA-Z0-9']:* {% (d) => d[0] + d[1].join("") %}
+predicate -> identifier {% id %}
 
 # foo(a, b)
 argList -> null {% (d) => ([]) %}
@@ -30,9 +30,11 @@ term -> var {% (d) => ({tag: 'var', value: d[0]}) %}
 term -> [0-9]:+ {% (d) => ({tag: 'int', value: parseInt(d[0].join(""))}) %}
 term -> fnCall {% id %}
 term -> "'" identifier {% (d) => ({tag: 'sym', value: d[1]}) %}
+term -> term "." identifier {% (d) => ({tag: 'dot', left: d[0], right: d[2]}) %}
+term -> "." predicate {% (d) => ({tag: 'dot', left: null, right: d[1]}) %}
 
-# pred2 x y -> ["pred", ["x", "y"]]
-relation -> predicate (__ term):* {% (d) => {return {tag: d[0], terms: d[1].map(t => t[1])}} %}
+# pred2 x y
+relation -> predicate (__ term):* {% (d) => ({tag: d[0], terms: d[1].map(t => t[1])}) %}
 
 # p2 x y, p1 z, foo
 relationList -> relation (_ ","):? {% (d) => [d[0]] %}
@@ -40,12 +42,6 @@ relationList -> relation comma relationList {% (d) => [d[0]].concat(d[2]) %}
 
 pureQuery -> null {% () => [] %}
 pureQuery -> relationList {% id %}
-
-# todo: associativity
-event_expr -> identifier {% (d) => ({ tag: "literal", name: d[0]}) %}
-event_expr -> op event_expr _ ";" _ event_expr cp  {% (d) => ({ tag: "concurrent", a: d[1], b: d[5]}) %}
-event_expr -> op event_expr _ "->" _ event_expr cp {% (d) => ({ tag: "sequence", a: d[1], b: d[5]}) %}
-event_expr -> "[" _ event_expr _ "|" _ pureQuery _ "]" {% (d) => ({ tag: "with-tuples", body: d[2], tuples: d[6]}) %}
 
 binOp -> "<=" {% id %}
 binOp -> ">=" {% id %}
@@ -55,6 +51,12 @@ binOp -> "=" {% id %}
 quantifier -> number {% (d) => ({tag: 'eq', count: d[0]}) %}
 quantifier -> "~" _ number {% (d) => ({tag: 'amapLimit', count: d[2]}) %}
 quantifier -> "max" _ number {% (d) => ({tag: 'limit', count: d[2]}) %}
+
+# todo: associativity
+event_expr -> identifier {% (d) => ({ tag: "literal", name: d[0]}) %}
+event_expr -> op event_expr _ ";" _ event_expr cp  {% (d) => ({ tag: "concurrent", a: d[1], b: d[5]}) %}
+event_expr -> op event_expr _ "->" _ event_expr cp {% (d) => ({ tag: "sequence", a: d[1], b: d[5]}) %}
+event_expr -> "[" _ event_expr _ "|" _ pureQuery _ "]" {% (d) => ({ tag: "with-tuples", body: d[2], tuples: d[6]}) %}
 
 episode_expr -> relation {% (d) => [{ tag: "observation", pattern: d[0]}] %}
 episode_expr -> op pureQuery cp _ "=>" _ op pureQuery cp
