@@ -1,11 +1,14 @@
-game: +(player p1, player p2,
-  play-area _,
-  discard _,
-  deck D,
-  card X1, located X1 D,
-  card X2, located X2 D,
-  card X3, located X3 D,
-), !do (setup-players -> turn).
+game: +(
+    player _, player _,
+    play-area _,
+    discard _,
+    deck D,
+    card X1, located X1 D,
+    card X2, located X2 D,
+    card X3, located X3 D,
+  ),
+  (player P, +(hand P _, choose-area P _)),
+  !do turn.
 
 setup-players: player P, +(hand P x, choose-area P y).
 

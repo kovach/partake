@@ -275,6 +275,21 @@ function updateBranch({ db, rules, js }, data, branch, path) {
         context,
       };
     }
+    case "subbranch": {
+      let newEpisode = {
+        ...newBranch,
+        value: branchFuture.episode(
+          episode.sequence(
+            episode.branch(
+              expr.branch,
+              context.map((c) => c.clone())
+            ),
+            sequenceFuture.episode(episode.branch(rest, context))
+          )
+        ),
+      };
+      return newEpisode;
+    }
     case "do": {
       if (rest.length === 0) {
         let newEpisode = {
@@ -551,6 +566,9 @@ function ppEpisode(e) {
     case "assert": {
       let { tuples } = e;
       return `+(${ppQuery(tuples)})`;
+    }
+    case "subbranch": {
+      return `(${e.branch.map(ppEpisode).join(", ")})`;
     }
     default:
       throw "";
@@ -929,6 +947,8 @@ function dotExpandRuleBody(body) {
         }
         case "done":
           return [p];
+        case "subbranch":
+          return [{ tag: "subbranch", branch: dotExpandRuleBody(p.branch) }];
         default:
           throw "";
       }
@@ -1111,14 +1131,14 @@ window.onload = () => {
 
 /* todo
 
-fix comments
+fix highlighted choose menu
 live-reload rules into episode
   editor?
 header containing viz instructions
 range function
 insert to db while running
-nested query
 
+? tests
 ? atomic rules
 
 chooser applied to other ui elements

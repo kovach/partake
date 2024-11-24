@@ -75,8 +75,7 @@ episode_expr -> term _ binOp _ term
   {% (d) => [{tag: 'binOp', operator: d[2], l: d[0], r: d[4]}] %}
 episode_expr -> "!done" {% () => [{tag: "done"}] %}
 episode_expr -> "!do" __ event_expr {% (d) => [{tag: "do", value: d[2]}] %}
-
-episode_expr -> op episode_list cp {% (d) => [{tag: "subbranch", query: d[1], name: '?'}] %}
+episode_expr -> op rule_body cp {% (d) => [{tag: "subbranch", branch: d[1] }] %}
 
 episode_list -> episode_expr (_ ","):? {% (d) => d[0] %}
 episode_list -> episode_expr comma episode_list {% (d) => d[0].concat(d[2]) %}
