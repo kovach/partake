@@ -114,7 +114,6 @@ function substituteEpisodeExpr(js, binding, expr) {
 }
 
 let branchFuture = {
-  // todo: rename? block?
   expr: (value) => ({ tag: "expr", value }),
   episode: (value) => ({ tag: "episode", value }),
 };
@@ -124,6 +123,7 @@ let sequenceFuture = {
   episode: (value) => ({ tag: "episode", value }),
 };
 
+// todo: move expr into here?
 let episode = {
   concurrent: (name, value) => ({ tag: "concurrent", id: freshId(), name, value }),
   sequence: (value, rest) => ({ tag: "sequence", id: freshId(), value, rest }),
@@ -134,12 +134,12 @@ let episode = {
     value: [value],
     tuples,
   }),
-  branch: (expr) => ({
+  branch: (expr, context) => ({
     tag: "branch",
     id: freshId(),
     past: [],
     value: branchFuture.expr(expr),
-    context: [emptyBinding()],
+    context: context || [emptyBinding()],
   }),
 };
 
@@ -275,23 +275,39 @@ function updateBranch({ db, rules, js }, data, branch, path) {
         context,
       };
     }
-    // todo
     case "do": {
-      //updatePathDb(db, context);
-      return {
-        ...newBranch,
-        value: branchFuture.episode(
-          episode.concurrent(
-            null,
-            context.map((binding) =>
-              beginEpisode(rules, substituteEpisodeExpr(js, binding, expr.value))
+      if (rest.length === 0) {
+        let newEpisode = {
+          ...newBranch,
+          value: branchFuture.episode(
+            episode.concurrent(
+              null,
+              context.map((binding) =>
+                beginEpisode(rules, substituteEpisodeExpr(js, binding, expr.value))
+              )
             )
-          )
-        ),
-      };
+          ),
+        };
+        return newEpisode;
+      } else {
+        let newEpisode = {
+          ...newBranch,
+          value: branchFuture.episode(
+            episode.sequence(
+              episode.concurrent(
+                null,
+                context.map((binding) =>
+                  beginEpisode(rules, substituteEpisodeExpr(js, binding, expr.value))
+                )
+              ),
+              sequenceFuture.episode(episode.branch(rest, context))
+            )
+          ),
+        };
+        return newEpisode;
+      }
     }
     case "done": {
-      //updatePathDb(db, context);
       return {
         ...newBranch,
       };
@@ -1032,7 +1048,7 @@ function newMain(prog) {
   }
 
   let render = mkWorldRender(
-    ["hand", "deck", "card", "play-area", "choose-area", "player"],
+    ["hand", "deck", "card", "play-area", "discard", "choose-area", "player"],
     ["located"],
     []
   );
@@ -1088,14 +1104,15 @@ window.onload = () => {
 
 /* todo
 
-? atomic rules
-intermediate do
+fix comments
 live-reload rules into episode
   editor?
 header containing viz instructions
 range function
 insert to db while running
 nested query
+
+? atomic rules
 
 chooser applied to other ui elements
 ? `new` operation
