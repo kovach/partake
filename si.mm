@@ -14,13 +14,13 @@ move: -(located .it _), +(located .it .to).
 turn: !do (grow-stage -> play-stage).
   grow-stage: player P, !do [(grow -> play) | the-player P].
     grow: !do (deal-cards -> choose-card).
-      # atomic
       deal-cards: 'rand chooses ~3 (located C .deck),
                   !do [move | it C, to .the-player.choose-area].
 
       choose-card: the-player P,
         'player chooses 1 (located C P.choose-area),
           !do [move | it C, to P.hand],
+        # move rest to discard
         located C' P.choose-area,
           !do [move | it C', to .discard].
 

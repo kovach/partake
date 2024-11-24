@@ -87,7 +87,6 @@ rule_body -> null {% () => [] %}
 rule_separator -> _ ":" _ {% () => 'def' %}
 rule_separator -> _ "->" _ {% () => 'trigger' %}
 
-rule -> "#" [^\n]:* [\n] {% () => null %}
 rule -> identifier rule_separator rule_body _ "."
   {% (d) => ({head: d[0], type: d[1], body: d[2] }) %}
 

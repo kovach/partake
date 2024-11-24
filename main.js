@@ -898,6 +898,44 @@ function dotExpandEpisode(expr) {
   }
 }
 
+function dotExpandRuleBody(body) {
+  let fix = (prefix) => prefix.map((pattern) => ({ tag: "observation", pattern }));
+  return body
+    .map((p) => {
+      switch (p.tag) {
+        case "observation": {
+          let { prefix, relation } = dotExpandRelation(p.pattern);
+          return fix(prefix).concat([{ tag: "observation", pattern: relation }]);
+        }
+        // todo retract
+        case "retract": {
+          let { prefix, query } = dotExpandQuery(p.query);
+          return fix(prefix).concat([{ tag: "retract", query: query }]);
+        }
+        case "assert": {
+          let { prefix, query } = dotExpandQuery(p.tuples);
+          return fix(prefix).concat([{ tag: "assert", tuples: query }]);
+        }
+        case "subquery": {
+          let { name } = p;
+          let { prefix, query } = dotExpandQuery(p.query);
+          return [{ tag: "subquery", name, query: prefix.concat(query) }];
+        }
+        case "choose":
+          return [p];
+        case "do": {
+          let { prefix, episode } = dotExpandEpisode(p.value);
+          return fix(prefix).concat([{ tag: "do", value: episode }]);
+        }
+        case "done":
+          return [p];
+        default:
+          throw "";
+      }
+    })
+    .flat(1);
+}
+
 function parseProgram(text) {
   function appendDone(body) {
     console.log(body);
@@ -907,44 +945,13 @@ function parseProgram(text) {
     return body;
   }
   function fixBody(body) {
-    let fix = (prefix) => prefix.map((pattern) => ({ tag: "observation", pattern }));
-    body = appendDone(body);
-    body = body
-      .map((p) => {
-        switch (p.tag) {
-          case "observation": {
-            let { prefix, relation } = dotExpandRelation(p.pattern);
-            return fix(prefix).concat([{ tag: "observation", pattern: relation }]);
-          }
-          // todo retract
-          case "retract": {
-            let { prefix, query } = dotExpandQuery(p.query);
-            return fix(prefix).concat([{ tag: "retract", query: query }]);
-          }
-          case "assert": {
-            let { prefix, query } = dotExpandQuery(p.tuples);
-            return fix(prefix).concat([{ tag: "assert", tuples: query }]);
-          }
-          case "subquery": {
-            let { name } = p;
-            let { prefix, query } = dotExpandQuery(p.query);
-            return [{ tag: "subquery", name, query: prefix.concat(query) }];
-          }
-          case "choose":
-            return [p];
-          case "do": {
-            let { prefix, episode } = dotExpandEpisode(p.value);
-            return fix(prefix).concat([{ tag: "do", value: episode }]);
-          }
-          case "done":
-            return [p];
-          default:
-            throw "";
-        }
-      })
-      .flat(1);
-    return body;
+    return dotExpandRuleBody(appendDone(body));
   }
+  // filter comments. todo: lexer
+  text = text
+    .split("\n")
+    .filter((l) => !l.match(/^\s*#/))
+    .join("\n");
   let exprs = parseNonterminal("program", text);
   let defs = new ArrayMap();
   let triggers = new ArrayMap();
