@@ -958,7 +958,6 @@ function dotExpandRuleBody(body) {
 
 function parseProgram(text) {
   function appendDone(body) {
-    console.log(body);
     if (body.length === 0) return [{ tag: "done" }];
     let last = body[body.length - 1];
     if (last.tag !== "done" && last.tag !== "do") return body.concat([{ tag: "done" }]);
@@ -979,7 +978,6 @@ function parseProgram(text) {
     if (e === null) continue;
     let { type, head, body } = e;
     body = fixBody(body);
-    console.log(body);
     switch (type) {
       case "def": {
         defs.add(head, body);
@@ -1045,8 +1043,7 @@ turn -> do turn.
 `;
 }
 
-function newMain(prog) {
-  let rules = parseProgram(prog);
+function newMain(rules) {
   let program = {
     rules,
     db: emptyDb(),
@@ -1125,23 +1122,27 @@ function newMain(prog) {
         program.db = past.db;
         updateOptions();
       } else console.log("nothing to undo");
+    } else if (ev.key === "r") {
+      console.log("reload rules");
+      loadRules((rules) => (program.rules = rules));
     } else console.log(ev);
   });
 
   updateOptions();
 }
 
-window.onload = () => {
+function loadRules(fn) {
   fetch("si.mm")
     .then((res) => res.text())
-    .then((text) => newMain(text));
-};
+    .then((text) => fn(parseProgram(text)));
+}
+
+window.onload = () => loadRules(newMain);
 
 /* todo
 
+datalog
 fix highlighted choose menu
-live-reload rules into episode
-  editor?
 header containing viz instructions
 range function
 insert to db while running
@@ -1152,7 +1153,6 @@ insert to db while running
 chooser applied to other ui elements
 ? `new` operation
 grid
-datalog?
 
 fix after turn nesting issue
 
@@ -1176,5 +1176,6 @@ actors
 */
 
 /* later plan
-value/dynamic breakpoint?
+in-game rule editor
+  value breakpoints?
 */
