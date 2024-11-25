@@ -1079,7 +1079,6 @@ function newMain(prog) {
     ["located"],
     []
   );
-  //let render = mkWorldRender(["hand", "deck", "card", "rat", "snack"], ["located"], []);
 
   function updateUI() {
     if (app) d.remove(app);
@@ -1107,7 +1106,16 @@ function newMain(prog) {
       if (options.length > 0) {
         // todo: allow random choice here
         if (activeBranchHeadExpr(options[0]).tag !== "choose") {
-          updateBranchAction(options[0], null);
+          let id = options[0].id;
+          let count = 0;
+          while (
+            id === options[0].id &&
+            activeBranchHeadExpr(options[0]).tag !== "choose"
+          ) {
+            updateBranchAction(options[0], null);
+            count++;
+          }
+          console.log("!! updated ", count, " times.");
         } else console.log("click the choice!");
       } else console.log("no options");
     } else if (ev.key === "k") {
