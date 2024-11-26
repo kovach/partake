@@ -810,13 +810,13 @@ function renderEpisode(action, active, ep) {
 
 function mkWorldRender(tokens, containments, ignored) {
   return (tuples, app) => {
+    let elements = new DelayedMap();
     function mk(label, s) {
       let e = d.createText(`${label}: ${s.map(ppTerm).join(" ")}`);
       app.appendChild(e);
       elements.set(ppTerm(s[s.length - 1]), e);
       return e;
     }
-    let elements = new DelayedMap();
     for (let [tag, tuple] of tuples) {
       if (tokens.includes(tag)) d.withClass(mk(tag, tuple), tag);
       else if (containments.includes(tag)) {
@@ -845,7 +845,7 @@ function dotExpandTerm(t) {
       //  .right case (left is null): generate a unary clause `right v`
       let prefix = [];
       let terms = [];
-      // left.rright case: generate a binary clause `right left v`
+      // left.right case: generate a binary clause `right left v`
       if (left) {
         let l = dotExpandTerm(left);
         prefix = l.prefix;
@@ -1141,35 +1141,28 @@ window.onload = () => loadRules(newMain);
 
 /* todo
 
+choice icons + run blocks
+replay
 datalog
-fix highlighted choose menu
+insert to db while running
+  simple rule editor
 header containing viz instructions
 range function
-insert to db while running
 
 ? tests
 ? atomic rules
 
-chooser applied to other ui elements
-? `new` operation
 grid
 
+fix highlighted choose menu
 fix after turn nesting issue
+? `new` operation
 
 early exit queries that can't match
   fix "1 out of n match" visual issue
 
-simple
-  factor out update logic from renderChoiceExpr. fix j for 'rand
-  batch query parts into one step
-  ! run until choice?
-
-replay log
-  issue with id stability?
-
 count
   not, comparisons
-? allow to pick invalid entities but explain why not included in query
 actors
   default (single choice, null choice), helper
 ? mutation inside choice
