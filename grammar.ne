@@ -72,7 +72,7 @@ episode_expr -> identifier _ ":=" _ "count" _ op pure_query cp
   {% (d) => [{ tag: "subquery", query: d[7], name: d[0] },
              { tag: "count", name: d[0] }] %}
 episode_expr -> term _ bin_op _ term
-  {% (d) => [{tag: 'bin_op', operator: d[2], l: d[0], r: d[4]}] %}
+  {% (d) => [{tag: 'binOp', operator: d[2], l: d[0], r: d[4]}] %}
 episode_expr -> "!done" {% () => [{tag: "done"}] %}
 episode_expr -> "!do" __ event_expr {% (d) => [{tag: "do", value: d[2]}] %}
 episode_expr -> op rule_body cp {% (d) => [{tag: "subbranch", branch: d[1] }] %}

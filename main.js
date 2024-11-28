@@ -206,20 +206,14 @@ function updateBranch({ db, rules, js }, data, branch, path) {
       let db = dbOfPath(path);
       // these are fresh
       context = af(evalQuery(db, js, [expr.pattern], context));
-      return {
-        ...newBranch,
-        context,
-      };
+      return { ...newBranch, context };
     }
     case "retract": {
       let { query } = expr;
       query = query.map((pattern) => ({ ...pattern, modifiers: ["delete"] }));
       context = af(evalQuery(db, js, query, context)); // these are fresh
       updatePathDb(db, context);
-      return {
-        ...newBranch,
-        context,
-      };
+      return { ...newBranch, context };
     }
     case "assert": {
       let { tuples } = expr;
@@ -229,10 +223,7 @@ function updateBranch({ db, rules, js }, data, branch, path) {
         });
       });
       updatePathDb(db, context);
-      return {
-        ...newBranch,
-        context,
-      };
+      return { ...newBranch, context };
     }
     case "subquery": {
       let { query, name } = expr;
@@ -242,24 +233,15 @@ function updateBranch({ db, rules, js }, data, branch, path) {
         c.set(name, mkSet(af(evalQuery(db, js, query, [c]))));
         return c;
       });
-      return {
-        ...newBranch,
-        context,
-      };
+      return { ...newBranch, context };
     }
     case "choose": {
-      return {
-        ...newBranch,
-        context: data,
-      };
+      return { ...newBranch, context: data };
     }
     case "count": {
       let { name } = expr;
       context = context.map((c) => c.clone().set(name, mkInt(c.get(name).value.length)));
-      return {
-        ...newBranch,
-        context,
-      };
+      return { ...newBranch, context };
     }
     // todo: move to evalQuery
     case "binOp": {
@@ -270,10 +252,7 @@ function updateBranch({ db, rules, js }, data, branch, path) {
         let vr = evalTerm(js, c, r);
         return fn(vl, vr);
       });
-      return {
-        ...newBranch,
-        context,
-      };
+      return { ...newBranch, context };
     }
     case "subbranch": {
       let newEpisode = {
@@ -351,10 +330,7 @@ function updateEpisode(ep, path, id, fn) {
   switch (ep.tag) {
     case "concurrent": {
       let { value } = ep;
-      return {
-        ...ep,
-        value: value.map((c) => updateEpisode(c, path, id, fn)),
-      };
+      return { ...ep, value: value.map((c) => updateEpisode(c, path, id, fn)) };
     }
     case "sequence": {
       let { value, rest } = ep;
@@ -412,10 +388,7 @@ function forceSequence(program, /*output:*/ options, ep) {
   switch (ep.tag) {
     case "concurrent": {
       let { value } = ep;
-      return {
-        ...ep,
-        value: value.map(recurse),
-      };
+      return { ...ep, value: value.map(recurse) };
     }
     case "sequence": {
       let { value, rest } = ep;
@@ -430,11 +403,7 @@ function forceSequence(program, /*output:*/ options, ep) {
         case "episode":
           rest = sequenceFuture.episode(recurse(rest.value));
       }
-      return {
-        ...ep,
-        value,
-        rest,
-      };
+      return { ...ep, value, rest };
     }
     case "branch": {
       let { value } = ep;
@@ -837,21 +806,27 @@ function dotExpandTerm(t) {
     case "var":
     case "sym":
     case "int":
-    case "call":
       return { prefix: [], term: t };
+    case "call": {
+      let { prefix, terms } = dotExpandTerms(t.args);
+      return { prefix, term: { tag: "call", fn: t.fn, args: terms } };
+    }
     case "dot":
       let { left, right } = t;
-
       //  .right case (left is null): generate a unary clause `right v`
       let prefix = [];
       let terms = [];
       // left.right case: generate a binary clause `right left v`
+      let v = mkVar("?" + right + uniqueInt());
       if (left) {
         let l = dotExpandTerm(left);
         prefix = l.prefix;
         terms = [l.term];
+        //v = mkVar("?" + right + uniqueInt());
+      } else {
+        // todo: maybe we want this semantics change
+        //v = mkVar("?" + right);
       }
-      let v = mkVar("?" + uniqueInt());
       terms.push(v);
       prefix.push({ tag: right, terms });
 
@@ -862,18 +837,22 @@ function dotExpandTerm(t) {
 
     //case "set":
     default:
-      throw "todo";
+      throw "";
   }
 }
-
-function dotExpandRelation(p) {
+function dotExpandTerms(t) {
   let prefix = [];
   let terms = [];
-  p.terms.forEach((term) => {
+  t.forEach((term) => {
     let { prefix: p, term: t } = dotExpandTerm(term);
     prefix = prefix.concat(p);
     terms.push(t);
   });
+  return { prefix, terms };
+}
+
+function dotExpandRelation(p) {
+  let { prefix, terms } = dotExpandTerms(p.terms);
   return { prefix, relation: { ...p, terms } };
 }
 
@@ -949,6 +928,12 @@ function dotExpandRuleBody(body) {
           return [p];
         case "subbranch":
           return [{ tag: "subbranch", branch: dotExpandRuleBody(p.branch) }];
+        case "binOp":
+          let r1 = dotExpandTerm(p.l);
+          let r2 = dotExpandTerm(p.r);
+          return fix(r1.prefix.concat(r2.prefix)).concat([
+            { ...p, l: r1.term, r: r2.term },
+          ]);
         default:
           throw "";
       }
@@ -1049,6 +1034,7 @@ function newMain(rules) {
     db: emptyDb(),
     js: {
       add: (a, b) => mkInt(a.value + b.value),
+      sub: (a, b) => mkInt(a.value - b.value),
     },
   };
 
@@ -1115,6 +1101,14 @@ function newMain(rules) {
           console.log("!! updated ", count, " times.");
         } else console.log("click the choice!");
       } else console.log("no options");
+    } else if (ev.key === "J") {
+      ev.preventDefault();
+      if (options.length > 0) {
+        // todo: allow random choice here
+        if (activeBranchHeadExpr(options[0]).tag !== "choose") {
+          updateBranchAction(options[0], null);
+        } else console.log("click the choice!");
+      } else console.log("no options");
     } else if (ev.key === "k") {
       if (history.length > 0) {
         let past = history.pop();
@@ -1141,7 +1135,10 @@ window.onload = () => loadRules(newMain);
 
 /* todo
 
+! issue: can't modify local db
+
 choice icons + run blocks
+? collapse any bubble
 replay
 datalog
 insert to db while running
