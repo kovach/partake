@@ -24,6 +24,7 @@ import {
   mkSym,
   mkVar,
   cloneDb,
+  seminaive,
 } from "./join.js";
 
 import { assert, splitArray, ArrayMap, DelayedMap } from "./collections.js";
@@ -1131,16 +1132,42 @@ function loadRules(fn) {
     .then((text) => fn(parseProgram(text)));
 }
 
-window.onload = () => loadRules(newMain);
+//window.onload = () => loadRules(main);
+window.onload = () => {
+  let rules = parseNonterminal(
+    "derivation_block",
+    `
+adj a b --- path a b.
+adj a b, path b c --- path a c.
+foo X --- bar X, baz X.
+bar Y --- asdf Y.`
+  );
+  let db = emptyDb();
+  let newTuples = [
+    { tag: "adj", tuple: [mkInt(1), mkInt(2)] },
+    { tag: "adj", tuple: [mkInt(2), mkInt(3)] },
+    { tag: "adj", tuple: [mkInt(3), mkInt(1)] },
+  ];
+  let log = d.getId("log");
+  seminaive(rules, { db, js: {} }, newTuples);
+  renderDb(db, log);
+};
 
 /* todo
 
-! issue: can't modify local db
+simple datalog
+  unit tests
+basic datalog
+  acting on semiring relations
+  add weighted patterns to syntax/evalQuery
 
-choice icons + run blocks
+finish local db changes
+
+actor: dom
+  choice icons + run blocks
+
 ? collapse any bubble
 replay
-datalog
 insert to db while running
   simple rule editor
 header containing viz instructions

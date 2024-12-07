@@ -15,6 +15,8 @@ identifier -> [a-zA-Z_] [a-zA-Z0-9'_-]:*  {% (d) => d[0] + d[1].join("") %}
 var -> identifier {% id %}
 
 predicate -> identifier {% id %}
+# todo
+predicate -> identifier "/" identifier {% (d) => d[0] + "/" + d[2] %}
 
 # foo(a, b)
 arg_list -> null {% (d) => ([]) %}
@@ -48,6 +50,14 @@ bin_op -> ">=" {% id %}
 bin_op -> "<" {% id %}
 bin_op -> ">" {% id %}
 bin_op -> "=" {% id %}
+
+## section: derivations
+#
+derivation -> pure_query _ "---" _ pure_query _ "." {% (d) => ({head: d[4], body: d[0]}) %}
+derivation_block -> (_ derivation):* {% (d) => d[0].map((r) => r[1]) %}
+
+## section: rules
+#
 quantifier -> number {% (d) => ({tag: 'eq', count: d[0]}) %}
 quantifier -> "~" _ number {% (d) => ({tag: 'amapLimit', count: d[2]}) %}
 quantifier -> "max" _ number {% (d) => ({tag: 'limit', count: d[2]}) %}
@@ -89,6 +99,6 @@ rule_separator -> _ "->" _ {% () => 'trigger' %}
 rule -> identifier rule_separator rule_body _ "."
   {% (d) => ({head: d[0], type: d[1], body: d[2] }) %}
 
-program -> (_ rule):* _ {% (d) => d[0].map((r) => r[1]) %}
+program -> (_ rule):* {% (d) => d[0].map((r) => r[1]) %}
 
-main -> program {% id %}
+main -> program _ {% id %}

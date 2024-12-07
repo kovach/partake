@@ -150,6 +150,7 @@ function emptyBinding() {
 
 // todo profile
 function extendBinding(c, tag, tuple, values, modifiers) {
+  assert(Array.isArray(values));
   for (let index = 0; index < values.length; index++) {
     let term = values[index];
     if (isLiteral(term) && !valEqual(term, tuple[index])) return false;
@@ -183,10 +184,47 @@ function evalQuery(db, js, query, context = [emptyBinding()]) {
   return query
     .map((pattern) => {
       assert(pattern.tag && pattern.terms);
-      //assert(Array.isArray(pattern) && pattern.length === 2);
       return { pattern, tuples: iterRelTuples(db, pattern.tag) };
     })
     .reduce((context, b) => joinBindings(js, context, b), context);
+}
+
+let rule = {
+  mk: (head, body) => {
+    // (head body : [{tag, terms}])
+    return { head, body };
+  },
+};
+
+// todo very unoptimized
+function seminaive(rules, { db, js }, newTuples) {
+  function removeAt(array, i) {
+    return array.filter((_, j) => j !== i);
+  }
+  function* splitRule(body, tag) {
+    for (let i = 0; i < body.length; i++) {
+      if (body[i].tag === tag) yield { spot: body[i], rest: removeAt(body, i) };
+    }
+  }
+  while (newTuples.length > 0) {
+    let { tag, tuple } = newTuples.pop();
+    for (let { head, body } of rules) {
+      for (let { spot, rest } of splitRule(body, tag)) {
+        let context = [extendBinding(emptyBinding(), tag, tuple, spot.terms, [])];
+        for (let binding of evalQuery(db, js, rest, context)) {
+          // todo: handle weighted tuples
+          for (let { tag, terms } of head) {
+            let result = { tag, tuple: substitute(js, binding, terms) };
+            if (!dbContains(db, result.tag, result.tuple)) {
+              newTuples.push(result);
+            }
+          }
+        }
+      }
+    }
+    dbAddTuple(db, tag, tuple);
+  }
+  return null;
 }
 
 function valEqual(a, b) {
@@ -307,4 +345,5 @@ export {
   tuplesOfDb,
   pp,
   cloneDb,
+  seminaive,
 };

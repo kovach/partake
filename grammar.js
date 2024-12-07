@@ -18,6 +18,7 @@ let ParserRules = [
     {"name": "identifier", "symbols": [/[a-zA-Z_]/, "identifier$ebnf$1"], "postprocess": (d) => d[0] + d[1].join("")},
     {"name": "var", "symbols": ["identifier"], "postprocess": id},
     {"name": "predicate", "symbols": ["identifier"], "postprocess": id},
+    {"name": "predicate", "symbols": ["identifier", {"literal":"/"}, "identifier"], "postprocess": (d) => d[0] + "/" + d[2]},
     {"name": "arg_list", "symbols": [], "postprocess": (d) => ([])},
     {"name": "arg_list$ebnf$1$subexpression$1", "symbols": ["_", {"literal":","}, "_", "arg_list"]},
     {"name": "arg_list$ebnf$1", "symbols": ["arg_list$ebnf$1$subexpression$1"], "postprocess": id},
@@ -53,6 +54,12 @@ let ParserRules = [
     {"name": "bin_op", "symbols": [{"literal":"<"}], "postprocess": id},
     {"name": "bin_op", "symbols": [{"literal":">"}], "postprocess": id},
     {"name": "bin_op", "symbols": [{"literal":"="}], "postprocess": id},
+    {"name": "derivation$string$1", "symbols": [{"literal":"-"}, {"literal":"-"}, {"literal":"-"}], "postprocess": function joiner(d) {return d.join('');}},
+    {"name": "derivation", "symbols": ["pure_query", "_", "derivation$string$1", "_", "pure_query", "_", {"literal":"."}], "postprocess": (d) => ({head: d[4], body: d[0]})},
+    {"name": "derivation_block$ebnf$1", "symbols": []},
+    {"name": "derivation_block$ebnf$1$subexpression$1", "symbols": ["_", "derivation"]},
+    {"name": "derivation_block$ebnf$1", "symbols": ["derivation_block$ebnf$1", "derivation_block$ebnf$1$subexpression$1"], "postprocess": function arrpush(d) {return d[0].concat([d[1]]);}},
+    {"name": "derivation_block", "symbols": ["derivation_block$ebnf$1"], "postprocess": (d) => d[0].map((r) => r[1])},
     {"name": "quantifier", "symbols": ["number"], "postprocess": (d) => ({tag: 'eq', count: d[0]})},
     {"name": "quantifier", "symbols": [{"literal":"~"}, "_", "number"], "postprocess": (d) => ({tag: 'amapLimit', count: d[2]})},
     {"name": "quantifier$string$1", "symbols": [{"literal":"m"}, {"literal":"a"}, {"literal":"x"}], "postprocess": function joiner(d) {return d.join('');}},
@@ -96,8 +103,8 @@ let ParserRules = [
     {"name": "program$ebnf$1", "symbols": []},
     {"name": "program$ebnf$1$subexpression$1", "symbols": ["_", "rule"]},
     {"name": "program$ebnf$1", "symbols": ["program$ebnf$1", "program$ebnf$1$subexpression$1"], "postprocess": function arrpush(d) {return d[0].concat([d[1]]);}},
-    {"name": "program", "symbols": ["program$ebnf$1", "_"], "postprocess": (d) => d[0].map((r) => r[1])},
-    {"name": "main", "symbols": ["program"], "postprocess": id}
+    {"name": "program", "symbols": ["program$ebnf$1"], "postprocess": (d) => d[0].map((r) => r[1])},
+    {"name": "main", "symbols": ["program", "_"], "postprocess": id}
 ];
 let ParserStart = "_";
 export default { Lexer, ParserRules, ParserStart };
