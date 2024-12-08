@@ -25,6 +25,8 @@ import {
   mkVar,
   cloneDb,
   seminaive,
+  seminaiveBase,
+  dbEq,
 } from "./join.js";
 
 import { assert, splitArray, ArrayMap, DelayedMap } from "./collections.js";
@@ -1132,34 +1134,64 @@ function loadRules(fn) {
     .then((text) => fn(parseProgram(text)));
 }
 
-//window.onload = () => loadRules(main);
-window.onload = () => {
-  let rules = parseNonterminal(
-    "derivation_block",
-    `
+let unitTests = new Map([
+  [
+    "datalog1",
+    () => {
+      let rules = parseNonterminal(
+        "derivation_block",
+        `
 adj a b --- path a b.
 adj a b, path b c --- path a c.
 foo X --- bar X, baz X.
 bar Y --- asdf Y.`
-  );
-  let db = emptyDb();
-  let newTuples = [
-    { tag: "adj", tuple: [mkInt(1), mkInt(2)] },
-    { tag: "adj", tuple: [mkInt(2), mkInt(3)] },
-    { tag: "adj", tuple: [mkInt(3), mkInt(1)] },
-  ];
-  let log = d.getId("log");
-  seminaive(rules, { db, js: {} }, newTuples);
-  renderDb(db, log);
-};
+      );
+      let expected = parseNonterminal(
+        "derivation_block",
+        `--- adj 1 2, adj 2 3, adj 3 1,
+    path 1 1, path 1 2, path 1 3,
+    path 2 1, path 2 2, path 2 3,
+    path 3 1, path 3 2, path 3 3.`
+      );
+      let db = emptyDb();
+      let testDb = emptyDb();
+      let newTuples = [
+        { tag: "adj", tuple: [mkInt(1), mkInt(2)] },
+        { tag: "adj", tuple: [mkInt(2), mkInt(3)] },
+        { tag: "adj", tuple: [mkInt(3), mkInt(1)] },
+      ];
+      let log = d.getId("log");
+      seminaive(rules, { db, js: {} }, newTuples);
+      seminaiveBase(expected, { db: testDb, js: {} });
+      renderDb(db, log);
+      // printDb normalizes
+      let result = dbEq(db, testDb);
+      assert(result);
+      return result;
+    },
+  ],
+]);
+
+function runTests() {
+  for (let [key, val] of unitTests.entries()) {
+    console.log(key, val());
+  }
+}
+
+//window.onload = () => loadRules(main);
+window.onload = runTests;
 
 /* todo
 
-simple datalog
-  unit tests
 basic datalog
-  acting on semiring relations
-  add weighted patterns to syntax/evalQuery
+  add weighted patterns to syntax
+  represent/act on semiring relations
+    map each tuple to a set of bindings (to support retraction)
+      each rule can produce one observable result per unique binding
+  timestamps?
+  nonmonotone
+    for each non-monotone pattern, add result to watchlist for the matched tuple
+    (all edb stateful relation matches are non-monotone)
 
 finish local db changes
 

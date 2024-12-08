@@ -112,10 +112,18 @@ function* tuplesOfDb(db) {
   }
 }
 function printDb(db) {
-  return af(db.entries()).map(([tag, rel]) => [
-    tag,
-    af(rel.entries()).map(([key, [_, c]]) => [key, c]),
-  ]);
+  return af(db.entries())
+    .map(([tag, rel]) => [
+      tag,
+      af(rel.entries())
+        .map(([key, [_, c]]) => [key, c])
+        .sort(([a, a_], [b, b_]) => a.localeCompare(b)),
+    ])
+    .sort(([a, a_], [b, b_]) => a.localeCompare(b));
+}
+
+function dbEq(db1, db2) {
+  return JSON.stringify(printDb(db1)) === JSON.stringify(printDb(db2));
 }
 
 function isLiteral(term) {
@@ -196,7 +204,19 @@ let rule = {
   },
 };
 
+function seminaiveBase(rules, { db, js }) {
+  let b = emptyBinding();
+  for (let { head, body } of rules) {
+    if (body.length === 0) {
+      for (let { tag, terms } of head) {
+        dbAddTuple(db, tag, substitute(js, b, terms));
+      }
+    }
+  }
+}
+
 // todo very unoptimized
+// todonow: handle nonlinearity correctly
 function seminaive(rules, { db, js }, newTuples) {
   function removeAt(array, i) {
     return array.filter((_, j) => j !== i);
@@ -346,4 +366,6 @@ export {
   pp,
   cloneDb,
   seminaive,
+  seminaiveBase,
+  dbEq,
 };
