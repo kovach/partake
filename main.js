@@ -24,23 +24,19 @@ import {
   mkSym,
   mkVar,
   cloneDb,
-  seminaive,
-  seminaiveBase,
   dbEq,
 } from "./join.js";
 
-import { assert, splitArray, ArrayMap, DelayedMap } from "./collections.js";
+import { seminaive, seminaiveBase } from "./derive.js";
+
+import { ap, assert, splitArray, ArrayMap, DelayedMap } from "./collections.js";
 
 import * as d from "./dom.js";
 
 import grammar from "./grammar.js";
 import { randomSample } from "./random.js";
 
-let ap = Symbol("partial-apply");
 let mapMaybe = Symbol("mapMaybe");
-Function.prototype[ap] = function (...given) {
-  return (...args) => this.apply(this, given.concat(args));
-};
 Array.prototype[mapMaybe] = function (f) {
   return this.map(f).filter((x) => x);
 };
@@ -90,6 +86,49 @@ function renderDb(db, app, previous) {
   }
 }
 
+let branchFuture = {
+  expr: (value) => ({ tag: "expr", value }),
+  episode: (value) => ({ tag: "episode", value }),
+};
+
+let sequenceFuture = {
+  expr: (value) => ({ tag: "expr", value }),
+  episode: (value) => ({ tag: "episode", value }),
+};
+
+let episode = {
+  concurrent: (name, value) => ({ tag: "concurrent", id: freshId(), name, value }),
+  sequence: (value, rest) => ({ tag: "sequence", id: freshId(), value, rest }),
+  branch: (expr, context) => ({
+    tag: "branch",
+    id: freshId(),
+    past: [],
+    value: branchFuture.expr(expr),
+    context: context || [emptyBinding()],
+  }),
+  named: (name, db, value) => ({ tag: "named", id: freshId(), db, value }),
+  // todo
+  //localTuples: (value, tuples) => ({
+  //  tag: "concurrent",
+  //  id: freshId(),
+  //  value: [value],
+  //  db: dbOfList(tuples),
+  //  //tuples,
+  //}),
+};
+
+function mkSchema(mapping) {
+  return {
+    mapping,
+    default: "game",
+  };
+}
+
+function findHome(schema, relation) {
+  let maybeHome = schema.mapping.get(relation);
+  return maybeHome || schema.default;
+}
+
 function substituteEpisodeExpr(js, binding, expr) {
   let recurse = substituteEpisodeExpr[ap](js, binding);
   switch (expr.tag) {
@@ -115,36 +154,6 @@ function substituteEpisodeExpr(js, binding, expr) {
     }
   }
 }
-
-let branchFuture = {
-  expr: (value) => ({ tag: "expr", value }),
-  episode: (value) => ({ tag: "episode", value }),
-};
-
-let sequenceFuture = {
-  expr: (value) => ({ tag: "expr", value }),
-  episode: (value) => ({ tag: "episode", value }),
-};
-
-// todo: move expr into here?
-let episode = {
-  concurrent: (name, value) => ({ tag: "concurrent", id: freshId(), name, value }),
-  sequence: (value, rest) => ({ tag: "sequence", id: freshId(), value, rest }),
-  // todo
-  localTuples: (value, tuples) => ({
-    tag: "concurrent",
-    id: freshId(),
-    value: [value],
-    tuples,
-  }),
-  branch: (expr, context) => ({
-    tag: "branch",
-    id: freshId(),
-    past: [],
-    value: branchFuture.expr(expr),
-    context: context || [emptyBinding()],
-  }),
-};
 
 function mkEpisodeByName({ defs, triggers }, name) {
   let now = defs.get(name);
@@ -177,7 +186,23 @@ function beginEpisode(rules, expr) {
   }
 }
 
-function updatePathDb(db, context) {
+//todonow
+class PathDb {
+  mapping = new Map();
+  constructor(episodePath) {
+    for (let ep of episodePath) {
+      //if (ep.tag === '
+    }
+  }
+}
+
+function updatePathDb(db, context, path) {
+  function add(tag, tuple, weight) {
+    let home = findHome(schema, tag);
+    let db = findDb(path, home);
+    dbAddTuple(db, tag, tuple, weight);
+  }
+
   context.forEach((c) => {
     c.notes.get("delete").forEach(([tag, tuple]) => dbAddTuple(db, tag, tuple, -1));
     c.notes.reset("delete");
@@ -188,7 +213,8 @@ function updatePathDb(db, context) {
 
 function updateBranch({ db, rules, js }, data, branch, path) {
   function dbOfPath(path) {
-    return addDbs([db, dbOfList([].concat(...path[mapMaybe]((node) => node.tuples)))]);
+    return addDbs(path[mapMaybe]((node) => node.db));
+    //return addDbs([db, dbOfList([].concat(...path[mapMaybe]((node) => node.tuples)))]);
   }
   let binaryOperatorFunctions = {
     "<": (l, r) => l.value < r.value,
@@ -327,6 +353,63 @@ function updateSequenceFuture(f, path, id, fn) {
   }
 }
 
+// todo: use this for other traversals
+function traverseEpisode(fn, state, ep) {
+  let rec = traverseEpisode[ap](fn, state);
+
+  function traverseSequenceFuture(fn, f) {
+    switch (f.tag) {
+      case "expr":
+        return f;
+      case "episode":
+        return sequenceFuture.episode(fn(f));
+    }
+  }
+
+  function traverseBranchFuture(fn, f) {
+    switch (f.tag) {
+      case "expr":
+        return f;
+      case "episode":
+        return branchFuture.episode(fn(f));
+    }
+  }
+
+  switch (ep.tag) {
+    case "concurrent": {
+      let { value } = ep;
+      return fn(state, { ...ep, value: value.map(rec) });
+    }
+    case "sequence": {
+      let { value, rest } = ep;
+      return fn(state, {
+        ...ep,
+        value: rec(value),
+        rest: traverseSequenceFuture(rec, rest),
+      });
+    }
+    case "branch": {
+      let { value } = ep;
+      return fn(state, { ...ep, value: traverseBranchFuture(value) });
+    }
+    default:
+      throw "";
+  }
+}
+
+// !! this only performs a shallow clone of episode objects and their db members.
+// We rely on the update procedure generating fresh contexts/etc.
+function cloneEpisode(ep) {
+  return traverseEpisode(
+    (_, ep) => {
+      if (ep.db) return { ...ep, db: cloneDb(db) };
+      else return { ...ep };
+    },
+    null,
+    ep
+  );
+}
+
 // traverses whole tree looking for node matching `id`
 function updateEpisode(ep, path, id, fn) {
   path = path.concat([ep]);
@@ -386,6 +469,8 @@ function isActive(e) {
 // The main purpose of this is to `beginEpisode` when the first part of a sequence has completed.
 // The secondary purpose is to accumulate all the branches that are active into the options array.
 // returns updated version of `ep` argument
+
+// todonow program -> rules
 function forceSequence(program, /*output:*/ options, ep) {
   let recurse = forceSequence[ap](program, options);
   switch (ep.tag) {
@@ -959,12 +1044,14 @@ function parseProgram(text) {
     .split("\n")
     .filter((l) => !l.match(/^\s*#/))
     .join("\n");
+  // parse
   let exprs = parseNonterminal("program", text);
   let defs = new ArrayMap();
   let triggers = new ArrayMap();
   for (let e of exprs) {
     if (e === null) continue;
     let { type, head, body } = e;
+    // unfold dot notation
     body = fixBody(body);
     switch (type) {
       case "def": {
@@ -982,59 +1069,10 @@ function parseProgram(text) {
   return { defs, triggers };
 }
 
-// todo: working tutorial examples
-function parseExamples() {
-  console.log("parse program: ", parseNonterminal("program", programText));
-  console.log("parse ep", parseNonterminal("episode_expr", "do ."));
-  console.log("parse ep", parseNonterminal("episode_expr", "foo X Y, do ."));
-  console.log("parse ep", e`foo X Y, bar Y Z, do (a -> b)`);
-  console.log("parse ep", e`foo X Y, bar Y Z, do a, b`);
-  console.log("parse ep", e`do turn`);
-}
-
-// todo: working tutorial examples
-function defunctProgramTexts() {
-  let programText1 = `
-game: () ! (land a, land b, spirit s,
-  card x, cost x 1, green x 1, red x 1,
-  card y, cost y 2, blue y 2, red y 1), do turn.
-turn: spirit S, do [grow | the-spirit S].
-turn: land L, do [defend | the-land L].
-grow: the-spirit S, S chooses 1 (card C), cost C Cost, done.
-defend: the-land L, done.
-turn -> do turn.
-`;
-
-  let programText2 = `
-game: do [turn | land a, land b, spirit s,
-  card x, cost x 1, green x 1, red x 1,
-  card y, cost y 2, blue y 2, red y 1
-  ].
-turn: land S, S chooses 1 (card C), cost C Cost, done.
-`;
-
-  let programText3 = `
-game: () ! (land a, land b, spirit s,
-  card x, cost x 1, green x 1, red x 1,
-  card y, cost y 2, blue y 2, red y 1), do turn.
-turn: land L, spirit S, done.
-`;
-
-  let programText4 = `
-game: () ! (land a, land b, land c, adjacent a b, adjacent b a, adjacent a c,
-            spirit 's, spirit 't, located 's a, located 't c), do turn.
-turn: spirit S, located S L,
-  S chooses 1 (adjacent L L'),
-  'rand chooses 1 (adjacent L L''),
-  (located S L) ! (located S L'), done.
-turn -> do turn.
-`;
-}
-
-function newMain(rules) {
+function main(rules) {
   let program = {
     rules,
-    db: emptyDb(),
+    //db: emptyDb(),
     js: {
       add: (a, b) => mkInt(a.value + b.value),
       sub: (a, b) => mkInt(a.value - b.value),
@@ -1042,6 +1080,7 @@ function newMain(rules) {
   };
 
   let now = mkEpisodeByName(rules, "game");
+  now.db = emptyDb();
   let options = [];
   let history = [];
 
@@ -1055,7 +1094,8 @@ function newMain(rules) {
   }
 
   function updateBranchAction(branch, data) {
-    history.push({ now, db: cloneDb(program.db) });
+    history.push(cloneEpisode(now));
+    //history.push({ now, db: cloneDb(program.db) });
     now = updateBranchById(program, now, branch.id, data);
     updateOptions();
   }
@@ -1080,11 +1120,10 @@ function newMain(rules) {
         elem.classList.add("hl");
       }
     }
-    render(tuplesOfDb(program.db), app);
-    //d.childParent(d.renderJSON(options), app);
+    render(tuplesOfDb(now.db), app);
+    //render(tuplesOfDb(program.db), app);
     console.log(options.length);
     scrollBody();
-    //renderDb(program.db, app);
   }
 
   document.addEventListener("keydown", (ev) => {
@@ -1182,6 +1221,10 @@ function runTests() {
 window.onload = runTests;
 
 /* todo
+
+js predicates
+  pass in db
+  input/output modes
 
 basic datalog
   add weighted patterns to syntax

@@ -1,5 +1,9 @@
 /* Utility functions and collection types. */
 
+let ap = Symbol("partial-apply");
+Function.prototype[ap] = function (...given) {
+  return (...args) => this.apply(this, given.concat(args));
+};
 function assert(cond, msg = "") {
   if (!cond) throw new Error(msg);
 }
@@ -37,9 +41,25 @@ Map.prototype.map = function (f) {
   return m;
 };
 
-class MonoidMap {
-  constructor(zero, plus, values) {
+class KeyedMap {
+  constructor(key, values) {
+    this.key = key;
     this.map = new Map(values);
+  }
+  get(k) {
+    return this.map.get(this.key(k))[1];
+  }
+  set(k, v) {
+    this.map.set(this.key(k), [k, v]);
+  }
+  *entries() {
+    for (let x of this.map.values()) yield x;
+  }
+}
+
+class MonoidMap {
+  constructor(zero, plus, map) {
+    this.map = map || new Map();
     this.zero = zero;
     this.plus = plus;
   }
@@ -57,6 +77,16 @@ class MonoidMap {
     let v = this.get(key);
     this.plus(v, value);
     return v;
+  }
+  clone() {
+    return new MonoidMap(
+      this.zero,
+      this.plus,
+      new Map(structuredClone(Array.from(this.map.entries())))
+    );
+  }
+  update(key, fn) {
+    this.map.set(key, fn(this.get(key)));
   }
 }
 
@@ -94,4 +124,4 @@ class DelayedMap {
     }
   }
 }
-export { assert, splitArray, MonoidMap, ArrayMap, DelayedMap };
+export { ap, assert, splitArray, MonoidMap, ArrayMap, KeyedMap, DelayedMap };

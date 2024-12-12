@@ -25,7 +25,7 @@ arg_list -> term (_ "," _ arg_list):?
     let rest = (d[1] !== null) ? d[1][3] : []
     return [d[0]].concat(rest)
   } %}
-fn_call -> "#" identifier _ "(" _ arg_list _ ")"
+fn_call -> "~" identifier _ "(" _ arg_list _ ")"
   {% (d) => ({tag :'call', fn: d[1], args: d[5]}) %}
 
 term -> var {% (d) => ({tag: 'var', value: d[0]}) %}
@@ -37,6 +37,7 @@ term -> "." predicate {% (d) => ({tag: 'dot', left: null, right: d[1]}) %}
 
 # pred2 x y
 relation -> predicate (__ term):* {% (d) => ({tag: d[0], terms: d[1].map(t => t[1])}) %}
+relation -> predicate (__ term):* _ "->" term {% (d) => ({tag: d[0], terms: d[1].map(t => t[1]), weight: d[4]}) %}
 
 # p2 x y, p1 z, foo
 relation_list -> relation (_ ","):? {% (d) => [d[0]] %}
