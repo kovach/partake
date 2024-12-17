@@ -25,7 +25,7 @@ import {
   cloneDb,
 } from "./join.js";
 
-import { fixRules, mkState, seminaive } from "./derive.js";
+import { fixRules, mkProgram, emptyState, seminaive } from "./derive.js";
 
 import { ap, assert, splitArray, ArrayMap, DelayedMap } from "./collections.js";
 
@@ -1176,6 +1176,9 @@ let js = {
   add: ({ value: a }, { value: b }) => mkInt(a + b),
 };
 
+function setupState(rules, js, relationTypes) {
+  return { state: emptyState(), program: mkProgram(rules, js, relationTypes) };
+}
 let unitTest2 = [
   "datalog2",
   () => {
@@ -1190,11 +1193,11 @@ dist x -> d1, adj x y d2 --- dist y -> @add(d1, d2).
       )
     );
     let newTuples = [];
-    let state = mkState(rules, js, {
+    let { state, program } = setupState(rules, js, {
       dist: "min",
       foo: "num",
     });
-    seminaive(state, newTuples);
+    seminaive(program, state, newTuples);
     assert(state.dbAggregates.map.size === 12);
     return state;
   },
@@ -1214,8 +1217,8 @@ dist a b -> d1, adj b c d2 --- dist a c -> @add(d1, d2).
       )
     );
     let newTuples = [];
-    let state = mkState(rules, js, { dist: "min" });
-    seminaive(state, newTuples);
+    let { state, program } = setupState(rules, js, { dist: "min" });
+    seminaive(program, state, newTuples);
     assert(state.dbAggregates.map.size === 18);
     return state;
   },
@@ -1252,9 +1255,9 @@ dist A C -> @add(D, 1).
       )
     );
     let newTuples = [];
-    let state = mkState(rules, js, { dist: "min" });
+    let { state, program } = setupState(rules, js, { dist: "min" });
     let t0 = performance.now();
-    seminaive(state, newTuples);
+    seminaive(program, state, newTuples);
     let t1 = performance.now();
     console.log("time: ", t1 - t0);
     assert(state.dbAggregates.map.size === 114);
@@ -1275,32 +1278,28 @@ window.onload = runTests;
 /* todo
 
 ! finish local db changes
+! integrate SAD
 
-basic datalog
+SAD
+  ! incremental
   fix non-linear issue
   check for unbound head variables
   get rid of `dependencies`
 
 js predicates
+  int range
   pass in db
   input/output modes
-  ? eval with types
-
+  ? `eval` with types
 
 actor: dom
   choice icons + run blocks
 
 ? collapse any bubble
 replay
-insert to db while running
-  simple rule editor
 header containing viz instructions
-range function
 
-? tests
-? atomic rules
-
-grid
+? atomic update
 
 fix highlighted choose menu
 fix after turn nesting issue
@@ -1313,10 +1312,9 @@ count
   not, comparisons
 actors
   default (single choice, null choice), helper
-? mutation inside choice
-*/
 
-/* later plan
-in-game rule editor
+rule editor
+  insert to db while running
   value breakpoints?
+
 */

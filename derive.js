@@ -34,24 +34,24 @@ function evalQuery({ db, js }, query, context = [emptyBinding()]) {
     for (let c of context) {
       let values = ts.map((t) => evalTerm(js, c, t));
       for (let tuple of readDb(c, values)) {
-        if (tupleValid(c, tg, tuple, values)) {
+        if (tupleValid(tuple, tg, values)) {
           yield extendBinding(c, tuple, values);
         }
       }
     }
   }
 
-  function tupleValid(c, tag, tuple, values) {
+  function tupleValid(tuple, tag, values) {
     function tval(i) {
       return tuple[i + 1];
     }
+
     assert(Array.isArray(values));
     if (tuple[0] !== tag) return false;
-    for (let index = 0; index < values.length; index++) {
-      let term = values[index];
-      if (isLiteral(term) && !valEqual(term, tval(index))) return false;
-    }
-    return true;
+    // all tuple components match the pattern where it is already bound (a literal)
+    return values.every((term, index) => {
+      return !(isLiteral(term) && !valEqual(term, tval(index)));
+    });
   }
 
   function extendBinding(c, tuple, values) {
@@ -60,10 +60,9 @@ function evalQuery({ db, js }, query, context = [emptyBinding()]) {
     }
 
     c = c.clone();
-    for (let index = 0; index < values.length; index++) {
-      let term = values[index];
+    values.forEach((term, index) => {
       if (isVar(term)) c.set(term.value, tval(index));
-    }
+    });
     c.notes.add("used", tuple);
     return c;
   }
@@ -83,13 +82,18 @@ function singletonDb(tuple) {
  * Atoms from the former are aggregated into the latter.
  * Queries produce atoms but see aggregates.
  */
-function mkState(rules, js, relationTypes) {
+function mkProgram(rules, js, relationTypes) {
   return {
-    dbAtoms: new ArrayMap(new KeyedMap(key)),
-    dbAggregates: new KeyedMap(key),
     rules,
     js,
     relationTypes,
+  };
+}
+
+function emptyState() {
+  return {
+    dbAtoms: new ArrayMap(new KeyedMap(key)),
+    dbAggregates: new KeyedMap(key),
   };
 }
 
@@ -122,13 +126,14 @@ function fixRules(rules) {
   }));
 }
 
-function seminaive(state, worklist) {
-  let { rules, dbAtoms, dbAggregates, relationTypes, js } = state;
+function seminaive(program, state, worklist, init = true) {
+  let { rules, relationTypes, js } = program;
+  let { dbAtoms, dbAggregates } = state;
   let dependencies = new ArrayMap(new KeyedMap(key));
   let debug = false;
 
   // Rules with empty LHS
-  assertEmptyTuple();
+  if (init) assertEmptyTuple();
   // Rules with LHS
   while (worklist.length > 0) {
     let tuple = worklist.pop();
@@ -294,4 +299,4 @@ function substitute(js, binding, terms) {
   return terms.map((v, i) => (i > 0 ? substituteTerm(js, binding, v) : v));
 }
 
-export { fixRules, mkState, seminaive };
+export { fixRules, emptyState, mkProgram, seminaive };
