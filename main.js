@@ -1185,7 +1185,10 @@ let unitTest2 = [
     let rules = fixRules(
       parseNonterminal(
         "derivation_block",
-        `--- root 1, adj 1 2 1, adj 2 3 1, adj 3 4 1, adj 1 4 22.
+        `
+---
+root 1, adj 1 2 1, adj 2 3 1, adj 3 4 1, adj 1 4 22.
+
 root a --- dist a -> 0.
 dist a -> d --- foo a -> d.
 dist x -> d1, adj x y d2 --- dist y -> @add(d1, d2).
@@ -1208,9 +1211,11 @@ let unitTest3 = [
     let rules = fixRules(
       parseNonterminal(
         "derivation_block",
-        `---
-          node 1, node 2, node 3, node 4,
-          adj 1 2 1, adj 2 3 1, adj 3 4 1, adj 1 4 22.
+        `
+---
+node 1, node 2, node 3, node 4,
+adj 1 2 1, adj 2 3 1, adj 3 4 1, adj 1 4 22.
+
 node a --- dist a a -> 0.
 dist a b -> d1, adj b c d2 --- dist a c -> @add(d1, d2).
 `
@@ -1283,8 +1288,9 @@ window.onload = runTests;
 SAD
   ! incremental
   fix non-linear issue
-  check for unbound head variables
+  parsing for declare arity/reduction type
   get rid of `dependencies`
+  static check for unbound head variables
 
 js predicates
   int range

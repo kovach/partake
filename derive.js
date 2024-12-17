@@ -280,19 +280,12 @@ function seminaive(program, state, worklist, init = true) {
 
 function substituteTerm(js, binding, term) {
   if (isLiteral(term)) return evalTerm(js, binding, term);
-  if (isHole(term)) {
-    return freshId();
-  } else {
-    assert(isVar(term));
-    let v = term.value;
-    let maybeV = binding.get(v);
-    if (maybeV) return maybeV;
-    else {
-      let id = freshId();
-      binding.set(v, id);
-      return id;
-    }
-  }
+  // todo: check during parsing
+  assert(isVar(term));
+  let v = term.value;
+  let result = binding.get(v);
+  assert(result);
+  return result;
 }
 
 function substitute(js, binding, terms) {
