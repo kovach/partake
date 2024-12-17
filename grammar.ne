@@ -55,9 +55,9 @@ bin_op -> ">" {% id %}
 bin_op -> "=" {% id %}
 
 ## section: derivations
-# todo: whitespace ambiguity!
-derivation -> pure_query _ "---" ("-"):* _ pure_query _ "." {% (d) => ({head: d[5], body: d[0]}) %}
-derivation_block -> (_ derivation):* {% (d) => d[0].map((r) => r[1]) %}
+derivation -> "---" ("-"):* _ relation_list _ "." {% (d) => ({head: d[3], body: []}) %}
+derivation -> relation_list _ "---" ("-"):* _ relation_list _ "." {% (d) => ({head: d[5], body: d[0]}) %}
+derivation_block -> (_ derivation):* _ {% (d) => d[0].map((r) => r[1]) %}
 
 ## section: rules
 #

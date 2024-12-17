@@ -1173,68 +1173,11 @@ function loadRules(fn) {
     .then((text) => fn(parseProgram(text)));
 }
 
-let unitTests_ = new Map([
-  [
-    "datalog1",
-    () => {
-      let rules = parseNonterminal(
-        "derivation_block",
-        `
-adj a b --- path a b.
-adj a b, path b c --- path a c.
-foo X --- bar X, baz X.
-bar Y --- asdf Y.`
-      );
-      let expected = parseNonterminal(
-        "derivation_block",
-        `--- adj 1 2, adj 2 3, adj 3 1,
-    path 1 1, path 1 2, path 1 3,
-    path 2 1, path 2 2, path 2 3,
-    path 3 1, path 3 2, path 3 3.`
-      );
-      let db = emptyDb();
-      let testDb = emptyDb();
-      let newTuples = [
-        { tag: "adj", tuple: [mkInt(1), mkInt(2)] },
-        { tag: "adj", tuple: [mkInt(2), mkInt(3)] },
-        { tag: "adj", tuple: [mkInt(3), mkInt(1)] },
-      ];
-      let log = d.getId("log");
-      seminaive(rules, { db, js: {} }, newTuples);
-      seminaiveBase(expected, { db: testDb, js: {} });
-      renderDb(db, log);
-      // printDb normalizes
-      let result = dbEq(db, testDb);
-      assert(result);
-      return result;
-    },
-  ],
-]);
-
-// todo: just use eval
 let js = {
   incr: ({ value: a }) => mkInt(a + 1),
   add: ({ value: a }, { value: b }) => mkInt(a + b),
 };
-let unitTest1 = [
-  "datalog1",
-  () => {
-    let rules = fixRules(
-      parseNonterminal(
-        "derivation_block",
-        `--- adj 1 2, adj 2 3, adj 3 1.
-adj a b --- path a b.
-adj a b, path b c --- path a c.
-foo X --- bar X, baz X.
-bar Y --- asdf Y.`
-      )
-    );
-    let newTuples = [];
-    let state = mkState(rules, js, { adj: "bool", path: "bool" });
-    seminaive(state, newTuples);
-    return state;
-  },
-];
+
 let unitTest2 = [
   "datalog2",
   () => {
@@ -1244,7 +1187,8 @@ let unitTest2 = [
         `--- root 1, adj 1 2 1, adj 2 3 1, adj 3 4 1, adj 1 4 22.
 root a --- dist a -> 0.
 dist a -> d --- foo a -> d.
-dist x -> d1, adj x y d2 --- dist y -> @add(d1, d2).`
+dist x -> d1, adj x y d2 --- dist y -> @add(d1, d2).
+`
       )
     );
     let newTuples = [];
@@ -1255,7 +1199,7 @@ dist x -> d1, adj x y d2 --- dist y -> @add(d1, d2).`
       foo: "num",
     });
     seminaive(state, newTuples);
-    assert(state.dbAggregates.map.size === 13);
+    assert(state.dbAggregates.map.size === 12);
     return state;
   },
 ];
@@ -1269,7 +1213,8 @@ let unitTest3 = [
           node 1, node 2, node 3, node 4,
           adj 1 2 1, adj 2 3 1, adj 3 4 1, adj 1 4 22.
 node a --- dist a a -> 0.
-dist a b -> d1, adj b c d2 --- dist a c -> @add(d1, d2).`
+dist a b -> d1, adj b c d2 --- dist a c -> @add(d1, d2).
+`
       )
     );
     let newTuples = [];
@@ -1290,7 +1235,8 @@ let unitTest4 = [
       parseNonterminal(
         "derivation_block",
         // board C
-        `---
+        `
+---
 land 1, land 2, land 3, land 4,
 land 5, land 6, land 7, land 8,
 adjacent 1 2, adjacent 1 5, adjacent 1 6,
@@ -1309,7 +1255,8 @@ dist A A -> 0.
 
 dist A B -> D, adj B C
 ----------------------
-dist A C -> @add(D, 1).`
+dist A C -> @add(D, 1).
+`
       )
     );
     let newTuples = [];
@@ -1329,12 +1276,10 @@ dist A C -> @add(D, 1).`
 ];
 
 function runTests() {
-  let unitTests = new Map([unitTest1, unitTest2, unitTest3]);
-  let [key, val] = unitTest4;
-  console.log(key, val());
-  //for (let [key, val] of unitTests.entries()) {
-  //  console.log(key, val());
-  //}
+  let unitTests = new Map([unitTest2, unitTest3, unitTest4]);
+  for (let [key, val] of unitTests.entries()) {
+    console.log(key, val());
+  }
 }
 
 //window.onload = () => loadRules(main);
