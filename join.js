@@ -5,19 +5,6 @@ const str = (e) => JSON.stringify(e, null, 2);
 const pp = (x) => console.log(str(x));
 const af = Array.from;
 
-// todo: db class
-class DB {
-  values = new Map();
-  constructor(add = (a, b) => a + b) {
-    this.add = add;
-  }
-}
-class Relation {
-  values = new Map();
-  constructor(add = (a, b) => a + b) {
-    this.add = add;
-  }
-}
 function emptyDb() {
   return new Map();
 }

@@ -1,6 +1,5 @@
 import {
   substitute,
-  dbOfList,
   dbAddTuple,
   af,
   str,
@@ -24,7 +23,6 @@ import {
   mkSym,
   mkVar,
   cloneDb,
-  dbEq,
 } from "./join.js";
 
 import { fixRules, mkState, seminaive } from "./derive.js";
@@ -1276,6 +1274,8 @@ window.onload = runTests;
 
 /* todo
 
+! finish local db changes
+
 basic datalog
   fix non-linear issue
   check for unbound head variables
@@ -1284,8 +1284,8 @@ basic datalog
 js predicates
   pass in db
   input/output modes
+  ? eval with types
 
-finish local db changes
 
 actor: dom
   choice icons + run blocks

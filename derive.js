@@ -1,11 +1,7 @@
 import {
   emptyBinding,
-  dbContains,
-  dbAddTuple,
   evalTerm,
   uniqueInt,
-  af,
-  str,
   isLiteral,
   freshId,
   isVar,
@@ -81,10 +77,11 @@ function singletonDb(tuple) {
   return new KeyedMap(key, [[tuple, true]]);
 }
 
-/* logical state:
- * dbAtoms: maps (tuple -> {(binding, weight)}),
- * dbAggregates: maps (tuple -> weight)
- * queries see the latter, produce the former
+/* Datalog evaluation state:
+ *   dbAtoms: maps (tuple -> {(binding, weight)}),
+ *   dbAggregates: maps (tuple -> weight)
+ * Atoms from the former are aggregated into the latter.
+ * Queries produce atoms but see aggregates.
  */
 function mkState(rules, js, relationTypes) {
   return {
@@ -115,7 +112,6 @@ function ppTuple(tuple) {
 }
 
 function fixRules(rules) {
-  // head/body fix
   function flatten(q) {
     return q.map(({ tag, terms }) => [tag].concat(terms));
   }
@@ -129,45 +125,23 @@ function fixRules(rules) {
 function seminaive(state, worklist) {
   let { rules, dbAtoms, dbAggregates, relationTypes, js } = state;
   let dependencies = new ArrayMap(new KeyedMap(key));
-
   let debug = false;
-  let log = (...args) => {
-    if (debug) console.log(...args);
-  };
 
-  // rules with empty LHS
+  // Rules with empty LHS
   assertEmptyTuple();
-  // rules with LHS
+  // Rules with LHS
   while (worklist.length > 0) {
     let tuple = worklist.pop();
     log("pop tuple: ", ppTuple(tuple));
     assertTuple(tuple);
   }
 
-  function wrap(type, fn) {
-    return ({ value: a }, { value: b }) => type(fn(a, b));
+  /* Definitions */
+
+  function log(...args) {
+    if (debug) console.log(...args);
   }
-  function reductionType(tag) {
-    let semirings = {
-      bool: { type: mkInt, add: wrap(mkInt, (a, b) => a || b), zero: mkInt(0) },
-      min: { type: mkInt, add: wrap(mkInt, Math.min), zero: mkInt(Infinity) },
-      max: { type: mkInt, add: wrap(mkInt, Math.max), zero: mkInt(-Infinity) },
-      num: { type: mkInt, add: wrap(mkInt, (a, b) => a + b), zero: mkInt(0) },
-    };
-    let ty = relationTypes[tag] || "bool";
-    assert(ty);
-    assert(ty in semirings);
-    return semirings[ty];
-  }
-  function getWeight(core) {
-    let { zero, add } = reductionType(tag(core));
-    let weight = dbAtoms.get(core).reduce((acc, { weight }) => add(acc, weight), zero);
-    return core.concat([weight]);
-  }
-  function queueTuple(tuple) {
-    log("queueTuple: ", ppTuple(tuple)); //tuple.map(ppTerm).join(","));
-    worklist = [tuple].concat(worklist);
-  }
+
   function assertEmptyTuple() {
     for (let rule of rules) {
       if (rule.body.length === 0) {
@@ -178,7 +152,9 @@ function seminaive(state, worklist) {
   function assertTuple(tuple) {
     for (let rule of rules) {
       for (let { spot, rest } of splitRule(rule.body, tag(tuple))) {
+        // bind new tuple
         let context = evalQuery({ db: singletonDb(tuple), js }, [spot], [emptyBinding()]);
+        // solve remaining query
         for (let binding of evalQuery({ db: dbAggregates, js }, rest, context)) {
           assertBinding({ rule, binding }, binding.notes.get("used"));
         }
@@ -187,11 +163,7 @@ function seminaive(state, worklist) {
     // insert tuple
     dbAggregates.set(tuple, true);
   }
-  function changeBinding({ rule, binding }, mod) {
-    for (let terms of rule.head) {
-      changeAtom(substitute(js, binding, terms), rule.id, binding, mod);
-    }
-  }
+
   function assertBinding(x, used) {
     log("assertBinding: ", x, used);
     for (let key of used) {
@@ -201,28 +173,12 @@ function seminaive(state, worklist) {
     }
     changeBinding(x, "add");
   }
-  function bindingEq(b1, b2) {
-    return b1.eq(b2, valEqual);
+
+  function changeBinding({ rule, binding }, mod) {
+    for (let terms of rule.head) {
+      changeAtom(substitute(js, binding, terms), rule.id, binding, mod);
+    }
   }
-  function containsAtom(db, atom, id, binding) {
-    return db
-      .get(core(atom))
-      .some(({ id: i, binding: b }) => i === id && bindingEq(b, binding));
-  }
-  function insertAtom(db, atom, id, binding) {
-    if (!containsAtom(db, atom, id, binding))
-      db.add(core(atom), { id, binding, weight: weight(atom) });
-  }
-  function removeAtom(db, atom, id, binding) {
-    db.update(core(atom), (arr) =>
-      arr.filter(({ id: i, binding: b }) => i !== id || !bindingEq(b, binding))
-    );
-  }
-  function tupleEqual(t1, t2) {
-    return JSON.stringify(t1) === JSON.stringify(t2);
-  }
-  // an atom is a tuple that hasn't been aggregated
-  // SAD rules produce atoms; but queries match on aggregated tuples
   function changeAtom(atom, id, binding, mod) {
     let oldWeighted = getWeight(core(atom));
     switch (mod) {
@@ -245,6 +201,51 @@ function seminaive(state, worklist) {
       log("no change: ", oldWeighted, newWeighted);
     }
   }
+
+  function getWeight(core) {
+    let { zero, add } = reductionType(tag(core));
+    let weight = dbAtoms.get(core).reduce((acc, { weight }) => add(acc, weight), zero);
+    return core.concat([weight]);
+  }
+  function reductionType(tag) {
+    function wrap(type, fn) {
+      return ({ value: a }, { value: b }) => type(fn(a, b));
+    }
+    let semirings = {
+      bool: { type: mkInt, add: wrap(mkInt, (a, b) => a || b), zero: mkInt(0) },
+      min: { type: mkInt, add: wrap(mkInt, Math.min), zero: mkInt(Infinity) },
+      max: { type: mkInt, add: wrap(mkInt, Math.max), zero: mkInt(-Infinity) },
+      num: { type: mkInt, add: wrap(mkInt, (a, b) => a + b), zero: mkInt(0) },
+    };
+    let ty = relationTypes[tag] || "bool";
+    assert(ty);
+    assert(ty in semirings);
+    return semirings[ty];
+  }
+  function queueTuple(tuple) {
+    log("queueTuple: ", ppTuple(tuple)); //tuple.map(ppTerm).join(","));
+    worklist = [tuple].concat(worklist);
+  }
+  function bindingEq(b1, b2) {
+    return b1.eq(b2, valEqual);
+  }
+  function insertAtom(db, atom, id, binding) {
+    if (!containsAtom(db, atom, id, binding))
+      db.add(core(atom), { id, binding, weight: weight(atom) });
+  }
+  function containsAtom(db, atom, id, binding) {
+    return db
+      .get(core(atom))
+      .some(({ id: i, binding: b }) => i === id && bindingEq(b, binding));
+  }
+  function removeAtom(db, atom, id, binding) {
+    db.update(core(atom), (arr) =>
+      arr.filter(({ id: i, binding: b }) => i !== id || !bindingEq(b, binding))
+    );
+  }
+  function tupleEqual(t1, t2) {
+    return JSON.stringify(t1) === JSON.stringify(t2);
+  }
   function retractTuple(tuple) {
     log("retractTuple: ", ppTuple(tuple));
     for (let ruleBinding of depends(tuple)) {
@@ -261,10 +262,10 @@ function seminaive(state, worklist) {
     return dependencies.get(tuple);
   }
 
-  function removeAt(array, i) {
-    return array.filter((_, j) => j !== i);
-  }
   function* splitRule(body, t) {
+    function removeAt(array, i) {
+      return array.filter((_, j) => j !== i);
+    }
     for (let i = 0; i < body.length; i++) {
       if (tag(body[i]) === t) yield { spot: body[i], rest: removeAt(body, i) };
     }
@@ -291,10 +292,6 @@ function substituteTerm(js, binding, term) {
 
 function substitute(js, binding, terms) {
   return terms.map((v, i) => (i > 0 ? substituteTerm(js, binding, v) : v));
-}
-
-function assertTuple(t) {
-  seminaive(rules, dbjs, [t]);
 }
 
 export { fixRules, mkState, seminaive };
