@@ -1193,8 +1193,6 @@ dist x -> d1, adj x y d2 --- dist y -> @add(d1, d2).
     );
     let newTuples = [];
     let state = mkState(rules, js, {
-      root: "bool",
-      adj: "bool",
       dist: "min",
       foo: "num",
     });
@@ -1218,11 +1216,7 @@ dist a b -> d1, adj b c d2 --- dist a c -> @add(d1, d2).
       )
     );
     let newTuples = [];
-    let state = mkState(rules, js, {
-      node: "bool",
-      adj: "bool",
-      dist: "min",
-    });
+    let state = mkState(rules, js, { dist: "min" });
     seminaive(state, newTuples);
     assert(state.dbAggregates.map.size === 18);
     return state;
@@ -1260,12 +1254,7 @@ dist A C -> @add(D, 1).
       )
     );
     let newTuples = [];
-    let state = mkState(rules, js, {
-      land: "bool",
-      adjacent: "bool",
-      adj: "bool",
-      dist: "min",
-    });
+    let state = mkState(rules, js, { dist: "min" });
     let t0 = performance.now();
     seminaive(state, newTuples);
     let t1 = performance.now();

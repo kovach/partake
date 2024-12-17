@@ -154,7 +154,7 @@ function seminaive(state, worklist) {
       max: { type: mkInt, add: wrap(mkInt, Math.max), zero: mkInt(-Infinity) },
       num: { type: mkInt, add: wrap(mkInt, (a, b) => a + b), zero: mkInt(0) },
     };
-    let ty = relationTypes[tag];
+    let ty = relationTypes[tag] || "bool";
     assert(ty);
     assert(ty in semirings);
     return semirings[ty];
