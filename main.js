@@ -27,7 +27,7 @@ import {
   dbEq,
 } from "./join.js";
 
-import { seminaive, seminaiveBase } from "./derive.js";
+import { fixRules, mkState, seminaive } from "./derive.js";
 
 import { ap, assert, splitArray, ArrayMap, DelayedMap } from "./collections.js";
 
@@ -1173,7 +1173,7 @@ function loadRules(fn) {
     .then((text) => fn(parseProgram(text)));
 }
 
-let unitTests = new Map([
+let unitTests_ = new Map([
   [
     "datalog1",
     () => {
@@ -1211,10 +1211,130 @@ bar Y --- asdf Y.`
   ],
 ]);
 
+// todo: just use eval
+let js = {
+  incr: ({ value: a }) => mkInt(a + 1),
+  add: ({ value: a }, { value: b }) => mkInt(a + b),
+};
+let unitTest1 = [
+  "datalog1",
+  () => {
+    let rules = fixRules(
+      parseNonterminal(
+        "derivation_block",
+        `--- adj 1 2, adj 2 3, adj 3 1.
+adj a b --- path a b.
+adj a b, path b c --- path a c.
+foo X --- bar X, baz X.
+bar Y --- asdf Y.`
+      )
+    );
+    let newTuples = [];
+    let state = mkState(rules, js, { adj: "bool", path: "bool" });
+    seminaive(state, newTuples);
+    return state;
+  },
+];
+let unitTest2 = [
+  "datalog2",
+  () => {
+    let rules = fixRules(
+      parseNonterminal(
+        "derivation_block",
+        `--- root 1, adj 1 2 1, adj 2 3 1, adj 3 4 1, adj 1 4 22.
+root a --- dist a -> 0.
+dist a -> d --- foo a -> d.
+dist x -> d1, adj x y d2 --- dist y -> @add(d1, d2).`
+      )
+    );
+    let newTuples = [];
+    let state = mkState(rules, js, {
+      root: "bool",
+      adj: "bool",
+      dist: "min",
+      foo: "num",
+    });
+    seminaive(state, newTuples);
+    assert(state.dbAggregates.map.size === 13);
+    return state;
+  },
+];
+let unitTest3 = [
+  "datalog3",
+  () => {
+    let rules = fixRules(
+      parseNonterminal(
+        "derivation_block",
+        `---
+          node 1, node 2, node 3, node 4,
+          adj 1 2 1, adj 2 3 1, adj 3 4 1, adj 1 4 22.
+node a --- dist a a -> 0.
+dist a b -> d1, adj b c d2 --- dist a c -> @add(d1, d2).`
+      )
+    );
+    let newTuples = [];
+    let state = mkState(rules, js, {
+      node: "bool",
+      adj: "bool",
+      dist: "min",
+    });
+    seminaive(state, newTuples);
+    assert(state.dbAggregates.map.size === 18);
+    return state;
+  },
+];
+let unitTest4 = [
+  "datalog4",
+  () => {
+    let rules = fixRules(
+      parseNonterminal(
+        "derivation_block",
+        // board C
+        `---
+land 1, land 2, land 3, land 4,
+land 5, land 6, land 7, land 8,
+adjacent 1 2, adjacent 1 5, adjacent 1 6,
+adjacent 2 3, adjacent 2 4, adjacent 2 5,
+adjacent 3 4, adjacent 4 5, adjacent 4 7,
+adjacent 5 6, adjacent 5 7,
+adjacent 6 7, adjacent 6 8,
+adjacent 7 8.
+
+adjacent A B --- adj A B.
+adjacent A B --- adj B A.
+
+land A
+------
+dist A A -> 0.
+
+dist A B -> D, adj B C
+----------------------
+dist A C -> @add(D, 1).`
+      )
+    );
+    let newTuples = [];
+    let state = mkState(rules, js, {
+      land: "bool",
+      adjacent: "bool",
+      adj: "bool",
+      dist: "min",
+    });
+    let t0 = performance.now();
+    seminaive(state, newTuples);
+    let t1 = performance.now();
+    console.log("time: ", t1 - t0);
+    assert(state.dbAggregates.map.size === 114);
+    return state;
+  },
+];
+
 function runTests() {
-  for (let [key, val] of unitTests.entries()) {
-    console.log(key, val());
-  }
+  let unitTests = new Map([unitTest1, unitTest2, unitTest3]);
+  let [key, val] = unitTest4;
+  console.log(key, val());
+  //for (let [key, val] of unitTests.entries()) {
+  //  console.log(key, val());
+  //}
 }
 
 //window.onload = () => loadRules(main);
@@ -1222,19 +1342,14 @@ window.onload = runTests;
 
 /* todo
 
+basic datalog
+  fix non-linear issue
+  check for unbound head variables
+  get rid of `dependencies`
+
 js predicates
   pass in db
   input/output modes
-
-basic datalog
-  add weighted patterns to syntax
-  represent/act on semiring relations
-    map each tuple to a set of bindings (to support retraction)
-      each rule can produce one observable result per unique binding
-  timestamps?
-  nonmonotone
-    for each non-monotone pattern, add result to watchlist for the matched tuple
-    (all edb stateful relation matches are non-monotone)
 
 finish local db changes
 

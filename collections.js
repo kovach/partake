@@ -42,15 +42,20 @@ Map.prototype.map = function (f) {
 };
 
 class KeyedMap {
-  constructor(key, values) {
+  constructor(key, values = []) {
     this.key = key;
-    this.map = new Map(values);
+    this.map = new Map();
+    for (let [k, v] of values) this.set(k, v);
   }
   get(k) {
-    return this.map.get(this.key(k))[1];
+    let m = this.map.get(this.key(k));
+    return m ? m[1] : undefined;
   }
   set(k, v) {
     this.map.set(this.key(k), [k, v]);
+  }
+  delete(k) {
+    this.map.delete(this.key(k));
   }
   *entries() {
     for (let x of this.map.values()) yield x;

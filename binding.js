@@ -59,9 +59,9 @@ class Binding {
   parent() {
     return this.parent;
   }
-  eq(b) {
+  eq(b, cmp) {
     for (let [key, val] of this.substitution.entries()) {
-      if (b.get(key) !== val) return false;
+      if (!cmp(b.get(key), val)) return false;
     }
     return true;
   }

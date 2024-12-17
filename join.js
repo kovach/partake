@@ -312,7 +312,9 @@ export {
   dbAddDb,
   addDbs,
   dbContains,
+  isVar,
   isLiteral,
+  isHole,
   valEqual,
   evalTerm,
   emptyBinding,
@@ -334,4 +336,5 @@ export {
   cloneDb,
   dbEq,
   extendBinding,
+  ppTuples,
 };

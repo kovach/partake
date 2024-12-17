@@ -25,7 +25,7 @@ arg_list -> term (_ "," _ arg_list):?
     let rest = (d[1] !== null) ? d[1][3] : []
     return [d[0]].concat(rest)
   } %}
-fn_call -> "~" identifier _ "(" _ arg_list _ ")"
+fn_call -> "@" identifier _ "(" _ arg_list _ ")"
   {% (d) => ({tag :'call', fn: d[1], args: d[5]}) %}
 
 term -> var {% (d) => ({tag: 'var', value: d[0]}) %}
@@ -36,8 +36,10 @@ term -> term "." identifier {% (d) => ({tag: 'dot', left: d[0], right: d[2]}) %}
 term -> "." predicate {% (d) => ({tag: 'dot', left: null, right: d[1]}) %}
 
 # pred2 x y
-relation -> predicate (__ term):* {% (d) => ({tag: d[0], terms: d[1].map(t => t[1])}) %}
-relation -> predicate (__ term):* _ "->" term {% (d) => ({tag: d[0], terms: d[1].map(t => t[1]), weight: d[4]}) %}
+#relation -> predicate (__ term):* {% (d) => ({tag: d[0], terms: d[1].map(t => t[1])}) %}
+relation -> predicate (__ term):*             {% (d) => ({tag: d[0], terms: d[1].map(t => t[1]).concat([{tag: 'int', value: 1}])}) %}
+#relation -> predicate (__ term):*             {% (d) => ({tag: d[1], terms: d[1].map(t => t[1]).concat([true])}) %}
+relation -> predicate (__ term):* _ "->" _ term {% (d) => ({tag: d[0], terms: d[1].map(t => t[1]).concat([d[5]])}) %}
 
 # p2 x y, p1 z, foo
 relation_list -> relation (_ ","):? {% (d) => [d[0]] %}
@@ -53,8 +55,8 @@ bin_op -> ">" {% id %}
 bin_op -> "=" {% id %}
 
 ## section: derivations
-#
-derivation -> pure_query _ "---" _ pure_query _ "." {% (d) => ({head: d[4], body: d[0]}) %}
+# todo: whitespace ambiguity!
+derivation -> pure_query _ "---" ("-"):* _ pure_query _ "." {% (d) => ({head: d[5], body: d[0]}) %}
 derivation_block -> (_ derivation):* {% (d) => d[0].map((r) => r[1]) %}
 
 ## section: rules
