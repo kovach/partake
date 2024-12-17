@@ -1164,10 +1164,12 @@ window.onload = deriveTests.runTests;
 /* todo
 
 ! finish local db changes
+  restore old logic for local tuples
+  switch over to dbAggregates
+  use additional attribute (episode uid) to mark local tuples
 ! integrate SAD
 
 SAD
-  ! incremental
   fix non-linear issue
   parsing for declare arity/reduction type
   get rid of `dependencies`

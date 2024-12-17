@@ -76,12 +76,6 @@ function singletonDb(tuple) {
   return new KeyedMap(key, [[tuple, true]]);
 }
 
-/* Datalog evaluation state:
- *   dbAtoms: maps (tuple -> {(binding, weight)}),
- *   dbAggregates: maps (tuple -> weight)
- * Atoms from the former are aggregated into the latter.
- * Queries produce atoms but see aggregates.
- */
 function mkProgram(rules, js, relationTypes) {
   return {
     rules,
@@ -90,10 +84,18 @@ function mkProgram(rules, js, relationTypes) {
   };
 }
 
+/* Datalog evaluation state:
+ *   dbAtoms: maps (tuple -> {(binding, weight)}),
+ *   dbAggregates: maps (tuple -> weight)
+ * Atoms from the former are aggregated into the latter.
+ * Queries produce atoms but see aggregates.
+ */
 function emptyState() {
   return {
     dbAtoms: new ArrayMap(new KeyedMap(key)),
     dbAggregates: new KeyedMap(key),
+    worklist: [],
+    init: true,
   };
 }
 
@@ -126,20 +128,47 @@ function fixRules(rules) {
   }));
 }
 
-function seminaive(program, state, worklist, init = true) {
+let mod = {
+  add: "add",
+  del: "del",
+  cases: (val, add, del) => {
+    switch (val) {
+      case "add":
+        return add();
+      case "del":
+        return del();
+      default:
+        throw "";
+    }
+  },
+};
+
+/* Main logic: iteratively derive and aggregate implications of `program.rules`.
+ * mutates state
+ */
+function seminaive(program, state) {
   let { rules, relationTypes, js } = program;
-  let { dbAtoms, dbAggregates } = state;
+  let { dbAtoms, dbAggregates, worklist, init } = state;
   let dependencies = new ArrayMap(new KeyedMap(key));
   let debug = false;
 
-  // Rules with empty LHS
-  if (init) assertEmptyTuple();
+  if (init) {
+    // Rules with empty LHS
+    assertEmptyTuple();
+    state.init = false;
+  }
   // Rules with LHS
   while (worklist.length > 0) {
-    let tuple = worklist.pop();
-    log("pop tuple: ", ppTuple(tuple));
-    assertTuple(tuple);
+    let { tuple, mod: m } = worklist.pop();
+    log("pop tuple: ", ppTuple(tuple), m);
+    mod.cases(
+      m,
+      () => assertTuple(tuple),
+      () => retractTuple(tuple)
+    );
   }
+  state.worklist = worklist;
+  return null;
 
   /* Definitions */
 
@@ -184,22 +213,18 @@ function seminaive(program, state, worklist, init = true) {
       changeAtom(substitute(js, binding, terms), rule.id, binding, mod);
     }
   }
-  function changeAtom(atom, id, binding, mod) {
+  function changeAtom(atom, id, binding, m) {
     let oldWeighted = getWeight(core(atom));
-    switch (mod) {
-      case "add":
-        insertAtom(dbAtoms, atom, id, binding);
-        break;
-      case "del":
-        removeAtom(dbAtoms, atom, id, binding);
-        break;
-      default:
-        throw "";
-    }
+    mod.cases(
+      m,
+      () => insertAtom(dbAtoms, atom, id, binding),
+      () => removeAtom(dbAtoms, atom, id, binding)
+    );
     let newWeighted = getWeight(core(atom));
     // todo: batching
     if (!tupleEqual(weight(oldWeighted), weight(newWeighted))) {
-      retractTuple(oldWeighted);
+      queueTuple(oldWeighted, mod.del);
+      //retractTuple(oldWeighted);
       let { zero } = reductionType(tag(atom));
       if (!valEqual(weight(newWeighted), zero)) queueTuple(newWeighted);
     } else {
@@ -227,9 +252,11 @@ function seminaive(program, state, worklist, init = true) {
     assert(ty in semirings);
     return semirings[ty];
   }
-  function queueTuple(tuple) {
-    log("queueTuple: ", ppTuple(tuple)); //tuple.map(ppTerm).join(","));
-    worklist = [tuple].concat(worklist);
+  // actually makes worklist into a stack
+  function queueTuple(tuple, m = mod.add) {
+    log("queueTuple: ", ppTuple(tuple));
+    //worklist = [{ tuple, mod: mod.add }].concat(worklist);
+    worklist.push({ tuple, mod: m });
   }
   function bindingEq(b1, b2) {
     return b1.eq(b2, valEqual);
@@ -257,7 +284,7 @@ function seminaive(program, state, worklist, init = true) {
       log("retractBinding: ", ruleBinding);
       retractBinding(ruleBinding);
     }
-    worklist = worklist.filter((t) => !tupleEqual(t, tuple));
+    worklist = worklist.filter(({ tuple: t }) => !tupleEqual(t, tuple));
     dbAggregates.delete(tuple);
   }
   function retractBinding(x) {
@@ -275,7 +302,6 @@ function seminaive(program, state, worklist, init = true) {
       if (tag(body[i]) === t) yield { spot: body[i], rest: removeAt(body, i) };
     }
   }
-  return null;
 }
 
 function substituteTerm(js, binding, term) {
@@ -292,4 +318,14 @@ function substitute(js, binding, terms) {
   return terms.map((v, i) => (i > 0 ? substituteTerm(js, binding, v) : v));
 }
 
-export { fixRules, emptyState, mkProgram, seminaive };
+// External interface to add/remove boolean state tuples
+function addTuple(state, tuple) {
+  tuple = tuple.concat(mkInt(1));
+  state.worklist.push({ tuple, mod: mod.add });
+}
+function delTuple(state, tuple) {
+  tuple = tuple.concat(mkInt(1));
+  state.worklist.push({ tuple, mod: mod.del });
+}
+
+export { fixRules, emptyState, mkProgram, seminaive, addTuple, delTuple };
