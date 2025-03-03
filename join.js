@@ -1,11 +1,10 @@
-import { assert } from "./collections.js";
+import { assert, ap } from "./collections.js";
 import { Binding } from "./binding.js";
 
 const str = (e) => JSON.stringify(e, null, 2);
 const pp = (x) => console.log(str(x));
 const af = Array.from;
 
-// todo: db class
 function emptyDb() {
   return new Map();
 }
@@ -29,41 +28,43 @@ function selectRel(db, tag) {
   }
   return v;
 }
+// todo
 function key(tuple) {
   return JSON.stringify(tuple);
 }
+
 function getKey(rel, key) {
   let v = rel.get(key);
   return v === undefined ? 0 : v[1];
 }
-function relAddTupleWithKey(rel, k, tuple, count = 1) {
-  let v = getKey(rel, k) + count;
+function relAddTupleWithKey(rel, k, tuple, count = 1, add) {
+  let v = add(getKey(rel, k), count);
   if (v > 0) rel.set(k, [tuple, v]);
   else rel.delete(k);
 }
-function relAddTuple(rel, tuple, count = 1) {
+function relAddTuple(rel, tuple, count = 1, add) {
   let k = key(tuple);
-  return relAddTupleWithKey(rel, k, tuple, count);
+  return relAddTupleWithKey(rel, k, tuple, count, add);
 }
 function dbGet(db, tag, tuple) {
   return getKey(selectRel(db, tag), key(tuple));
 }
 // mutates left arg
-function relAddRel(rel1, rel2) {
+function relAddRel(rel1, rel2, add) {
   for (let [k, v] of rel2.entries()) {
-    relAddTupleWithKey(rel1, k, v[0], v[1]);
+    relAddTupleWithKey(rel1, k, v[0], v[1], add);
   }
 }
 function dbContains(db, tag, tuple) {
   return dbGet(db, tag, tuple) > 0;
 }
 function dbAddTuple(db, tag, tuple, count = 1) {
-  relAddTuple(selectRel(db, tag), tuple, count);
+  relAddTuple(selectRel(db, tag), tuple, count, db.add);
 }
 // mutates left arg
 function dbAddDb(db1, db2) {
   for (let [tag, rel] of db2.entries()) {
-    relAddRel(selectRel(db1, tag), rel);
+    relAddRel(selectRel(db1, tag), rel, db1.add);
   }
   return db1;
 }
@@ -197,56 +198,6 @@ function evalQuery(db, js, query, context = [emptyBinding()]) {
     .reduce((context, b) => joinBindings(js, context, b), context);
 }
 
-let rule = {
-  mk: (head, body) => {
-    // (head body : [{tag, terms}])
-    return { head, body };
-  },
-};
-
-function seminaiveBase(rules, { db, js }) {
-  let b = emptyBinding();
-  for (let { head, body } of rules) {
-    if (body.length === 0) {
-      for (let { tag, terms } of head) {
-        dbAddTuple(db, tag, substitute(js, b, terms));
-      }
-    }
-  }
-}
-
-// todo very unoptimized
-// todonow: handle nonlinearity correctly
-function seminaive(rules, { db, js }, newTuples) {
-  function removeAt(array, i) {
-    return array.filter((_, j) => j !== i);
-  }
-  function* splitRule(body, tag) {
-    for (let i = 0; i < body.length; i++) {
-      if (body[i].tag === tag) yield { spot: body[i], rest: removeAt(body, i) };
-    }
-  }
-  while (newTuples.length > 0) {
-    let { tag, tuple } = newTuples.pop();
-    for (let { head, body } of rules) {
-      for (let { spot, rest } of splitRule(body, tag)) {
-        let context = [extendBinding(emptyBinding(), tag, tuple, spot.terms, [])];
-        for (let binding of evalQuery(db, js, rest, context)) {
-          // todo: handle weighted tuples
-          for (let { tag, terms } of head) {
-            let result = { tag, tuple: substitute(js, binding, terms) };
-            if (!dbContains(db, result.tag, result.tuple)) {
-              newTuples.push(result);
-            }
-          }
-        }
-      }
-    }
-    dbAddTuple(db, tag, tuple);
-  }
-  return null;
-}
-
 function valEqual(a, b) {
   if (a.tag !== b.tag) return false;
   assert(a.tag !== "var" && a.tag !== "call");
@@ -317,23 +268,25 @@ function freshId() {
   return { tag: "sym", value: uniqueInt() };
 }
 
-function substitute(js, binding, terms) {
-  return terms.map((term) => {
-    if (isLiteral(term)) return evalTerm(js, binding, term);
-    if (isHole(term)) {
-      return freshId();
-    } else {
-      assert(isVar(term));
-      let v = term.value;
-      let maybeV = binding.get(v);
-      if (maybeV) return maybeV;
-      else {
-        let id = freshId();
-        binding.set(v, id);
-        return id;
-      }
+function substituteTerm(js, binding, term) {
+  if (isLiteral(term)) return evalTerm(js, binding, term);
+  if (isHole(term)) {
+    return freshId();
+  } else {
+    assert(isVar(term));
+    let v = term.value;
+    let maybeV = binding.get(v);
+    if (maybeV) return maybeV;
+    else {
+      let id = freshId();
+      binding.set(v, id);
+      return id;
     }
-  });
+  }
+}
+
+function substitute(js, binding, terms) {
+  return terms.map(substituteTerm[ap](js, binding));
 }
 
 export {
@@ -346,13 +299,16 @@ export {
   dbAddDb,
   addDbs,
   dbContains,
+  isVar,
   isLiteral,
+  isHole,
   valEqual,
   evalTerm,
   emptyBinding,
   evalQuery,
   freshId,
   uniqueInt,
+  substituteTerm,
   substitute,
   ppQuery,
   ppTerm,
@@ -365,7 +321,7 @@ export {
   tuplesOfDb,
   pp,
   cloneDb,
-  seminaive,
-  seminaiveBase,
   dbEq,
+  extendBinding,
+  ppTuples,
 };

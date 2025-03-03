@@ -32,7 +32,7 @@ import {
 import { assert, splitArray, ArrayMap, DelayedMap } from "./collections.js";
 
 import * as d from "./dom.js";
-
+import { parseNonterminal } from "./parse.js";
 import grammar from "./grammar.js";
 import { randomSample } from "./random.js";
 
@@ -49,17 +49,6 @@ function scrollBody() {
   window.scrollTo(0, document.body.scrollHeight);
 }
 
-function parseNonterminal(nt, text) {
-  let assertAmbiguity = true;
-  let g = nearley.Grammar.fromCompiled(grammar);
-  g.start = nt;
-  let parser = new nearley.Parser(g);
-  parser.feed(text);
-  let result = parser.results;
-  assert(result.length > 0);
-  if (assertAmbiguity) assert(result.length === 1);
-  return result[0];
-}
 function makeTuple(js, binding, pattern) {
   let { tag, terms } = pattern;
   return [tag, substitute(js, binding, terms)];

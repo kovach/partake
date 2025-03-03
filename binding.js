@@ -33,7 +33,8 @@ class Binding {
   clone() {
     let m = new Binding();
     m.parent = this.parent;
-    m.notes = new ArrayMap(structuredClone(Array.from(this.notes.map.entries())));
+    //m.notes = new ArrayMap( new Map(structuredClone(Array.from(this.notes.map.entries()))));
+    m.notes = this.notes.clone();
     m.substitution = this.substitution.map(cloneTerm);
     return m;
   }
@@ -57,6 +58,12 @@ class Binding {
   }
   parent() {
     return this.parent;
+  }
+  eq(b, cmp) {
+    for (let [key, val] of this.substitution.entries()) {
+      if (!cmp(b.get(key), val)) return false;
+    }
+    return true;
   }
 }
 

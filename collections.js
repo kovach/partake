@@ -1,5 +1,9 @@
 /* Utility functions and collection types. */
 
+let ap = Symbol("partial-apply");
+Function.prototype[ap] = function (...given) {
+  return (...args) => this.apply(this, given.concat(args));
+};
 function assert(cond, msg = "") {
   if (!cond) throw new Error(msg);
 }
@@ -37,9 +41,30 @@ Map.prototype.map = function (f) {
   return m;
 };
 
+class KeyedMap {
+  constructor(key, values = []) {
+    this.key = key;
+    this.map = new Map();
+    for (let [k, v] of values) this.set(k, v);
+  }
+  get(k) {
+    let m = this.map.get(this.key(k));
+    return m ? m[1] : undefined;
+  }
+  set(k, v) {
+    this.map.set(this.key(k), [k, v]);
+  }
+  delete(k) {
+    this.map.delete(this.key(k));
+  }
+  *entries() {
+    for (let x of this.map.values()) yield x;
+  }
+}
+
 class MonoidMap {
-  constructor(zero, plus, values) {
-    this.map = new Map(values);
+  constructor(zero, plus, map) {
+    this.map = map || new Map();
     this.zero = zero;
     this.plus = plus;
   }
@@ -57,6 +82,16 @@ class MonoidMap {
     let v = this.get(key);
     this.plus(v, value);
     return v;
+  }
+  clone() {
+    return new MonoidMap(
+      this.zero,
+      this.plus,
+      new Map(structuredClone(Array.from(this.map.entries())))
+    );
+  }
+  update(key, fn) {
+    this.map.set(key, fn(this.get(key)));
   }
 }
 
@@ -94,4 +129,4 @@ class DelayedMap {
     }
   }
 }
-export { assert, splitArray, MonoidMap, ArrayMap, DelayedMap };
+export { ap, assert, splitArray, MonoidMap, ArrayMap, KeyedMap, DelayedMap };
