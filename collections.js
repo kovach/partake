@@ -5,7 +5,10 @@ Function.prototype[ap] = function (...given) {
   return (...args) => this.apply(this, given.concat(args));
 };
 function assert(cond, msg = "") {
-  if (!cond) throw new Error(msg);
+  if (!cond) {
+    if (typeof msg === "function") msg = msg();
+    throw new Error(msg);
+  }
 }
 
 // use like this:
@@ -129,4 +132,4 @@ class DelayedMap {
     }
   }
 }
-export { ap, assert, splitArray, MonoidMap, ArrayMap, KeyedMap, DelayedMap };
+export { ap, toTag, assert, splitArray, MonoidMap, ArrayMap, KeyedMap, DelayedMap };

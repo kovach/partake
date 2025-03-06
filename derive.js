@@ -21,21 +21,43 @@ function evalQuery({ db, js }, query, context = [emptyBinding()]) {
 
   return query.reduce(joinBindings, context);
 
-  function* readDb(c, values) {
+  function* readDb(tag, c, values) {
     // todo!
-    for (let [tuple, _] of db.entries()) {
-      yield tuple;
+    let extern = tag[0] === "@";
+    if (extern) {
+      tag = tag.slice(1);
+      for (let x of js[tag](...values)) {
+        yield x;
+      }
+    } else {
+      for (let [tuple, _] of db.entries()) {
+        yield tuple;
+      }
     }
   }
 
-  function* joinBindings(context, tuple) {
-    let tg = tag(tuple);
-    let ts = terms(tuple);
+  function* joinBindings(context, pattern) {
+    let tg = tag(pattern);
+    let ts = terms(pattern);
     for (let c of context) {
       let values = ts.map((t) => evalTerm(js, c, t));
-      for (let tuple of readDb(c, values)) {
-        if (tupleValid(tuple, tg, values)) {
-          yield extendBinding(c, tuple, values);
+      // handle negation specially
+      // if weight is 0 after eval, assert other values are also bound
+      //   getWeight, proceed
+      // otherwise, ...
+      //let zero = reductionType(tg).zero;
+      //if (valEqual(values[values.length - 1], zero)) {
+      //  for (let v of values) {
+      //    assert(!isVar(v), "negated pattern must not contain unbound variables");
+      //  }
+      //  let val = getOrInsertZero(tg, values);
+      //  if (valEqual(val, zero)) yield c.clone();
+      //} else
+      {
+        for (let tuple of readDb(tg, c, values)) {
+          if (tupleValid(tuple, tg, values)) {
+            yield extendBinding(c, tuple, values);
+          }
         }
       }
     }
@@ -47,7 +69,10 @@ function evalQuery({ db, js }, query, context = [emptyBinding()]) {
     }
 
     assert(Array.isArray(values));
-    if (tuple[0] !== tag) return false;
+    if (tuple[0] !== tag) {
+      return false;
+    }
+    if (values.length !== tuple.length - 1) return false;
     // all tuple components match the pattern where it is already bound (a literal)
     return values.every((term, index) => {
       return !(isLiteral(term) && !valEqual(term, tval(index)));
@@ -139,7 +164,7 @@ let mod = {
       case "del":
         return del();
       default:
-        throw "";
+        throw "mod";
     }
   },
 };
@@ -150,6 +175,7 @@ let mod = {
 function seminaive(program, state) {
   let { rules, relationTypes, js } = program;
   let { dbAtoms, dbAggregates, worklist, init } = state;
+  // !!! TODO
   let dependencies = new ArrayMap(new KeyedMap(key));
   let debug = false;
 
@@ -169,12 +195,17 @@ function seminaive(program, state) {
     );
   }
   state.worklist = worklist;
+  //throw "";
   return null;
 
   /* Definitions */
 
   function log(...args) {
     if (debug) console.log(...args);
+  }
+
+  function log2(...args) {
+    if (true) console.log(...args);
   }
 
   function assertEmptyTuple() {
@@ -201,11 +232,12 @@ function seminaive(program, state) {
 
   function assertBinding(x, used) {
     log("assertBinding: ", x, used);
-    if (x.type === "dyn") {
+    assert(x.rule.type);
+    if (x.rule.type === "dyn") {
       for (let key of used) {
         log("asserting used: ", ppTuple(key));
         dependencies.add(key, x);
-        log(dependencies.get(key));
+        log("dependency list: ", dependencies.get(key));
       }
     }
     changeBinding(x, "add");
@@ -220,7 +252,12 @@ function seminaive(program, state) {
         break;
       case "imp":
         for (let terms of rule.head) {
-          changeAtom(substitute(js, binding, terms), rule.id, binding, mod);
+          changeAtom(
+            substitute(js, binding, terms, (allowFresh = true)),
+            rule.id,
+            binding,
+            mod
+          );
         }
         break;
       case "command":
@@ -239,7 +276,6 @@ function seminaive(program, state) {
     // todo: batching
     if (!tupleEqual(weight(oldWeighted), weight(newWeighted))) {
       queueTuple(oldWeighted, mod.del);
-      //retractTuple(oldWeighted);
       let { zero } = reductionType(tag(atom));
       if (!valEqual(weight(newWeighted), zero)) queueTuple(newWeighted);
     } else {
@@ -319,18 +355,22 @@ function seminaive(program, state) {
   }
 }
 
-function substituteTerm(js, binding, term) {
+function substituteTerm(js, binding, term, allowFresh) {
   if (isLiteral(term)) return evalTerm(js, binding, term);
   // todo: check during parsing
   assert(isVar(term));
   let v = term.value;
   let result = binding.get(v);
-  assert(result);
+  if (result) return result;
+  if (!allowFresh) assert(false, "dynamic rule not allowed to generate fresh values");
+  result = freshId();
+  if (isHole(term)) return result;
+  binding.set(v, result);
   return result;
 }
 
-function substitute(js, binding, terms) {
-  return terms.map((v, i) => (i > 0 ? substituteTerm(js, binding, v) : v));
+function substitute(js, binding, terms, allowFresh = false) {
+  return terms.map((v, i) => (i > 0 ? substituteTerm(js, binding, v, allowFresh) : v));
 }
 
 // External interface to add/remove boolean state tuples

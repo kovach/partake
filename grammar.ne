@@ -37,9 +37,10 @@ term -> "." predicate {% (d) => ({tag: 'dot', left: null, right: d[1]}) %}
 
 # pred2 x y
 #relation -> predicate (__ term):* {% (d) => ({tag: d[0], terms: d[1].map(t => t[1])}) %}
-relation -> predicate (__ term):*             {% (d) => ({tag: d[0], terms: d[1].map(t => t[1]).concat([{tag: 'int', value: 1}])}) %}
-#relation -> predicate (__ term):*             {% (d) => ({tag: d[1], terms: d[1].map(t => t[1]).concat([true])}) %}
+#relation -> predicate (__ term):*            {% (d) => ({tag: d[1], terms: d[1].map(t => t[1]).concat([true])}) %}
+relation -> predicate (__ term):*               {% (d) => ({tag: d[0], terms: d[1].map(t => t[1]).concat([{tag: 'int', value: 1}])}) %}
 relation -> predicate (__ term):* _ "->" _ term {% (d) => ({tag: d[0], terms: d[1].map(t => t[1]).concat([d[5]])}) %}
+relation -> "@" predicate (__ term):*           {% (d) => ({tag: "@"+d[1], terms: d[2].map(t => t[1]).concat([{tag: 'int', value: 1}])}) %}
 
 # p2 x y, p1 z, foo
 relation_list -> relation (_ ","):? {% (d) => [d[0]] %}
@@ -55,9 +56,18 @@ bin_op -> ">" {% id %}
 bin_op -> "=" {% id %}
 
 ## section: derivations
-derivation -> "---" ("-"):* _ relation_list _ "." {% (d) => ({head: d[3], body: []}) %}
-derivation -> relation_list _ "---" ("-"):* _ relation_list _ "." {% (d) => ({head: d[5], body: d[0]}) %}
-derivation_block -> (_ derivation):* _ {% (d) => d[0].map((r) => r[1]) %}
+derivation -> "---" ("-"):* _ relation_list _ "." {% (d) => ({head: d[3], body: [], type: 'dyn'}) %}
+derivation -> relation_list _ "---" ("-"):* _ relation_list _ "." {% (d) => ({head: d[5], body: d[0], type: 'dyn'}) %}
+
+rule_command -> fn_call {% id %}
+rule_derivation -> ">>>" (">"):* _ relation_list _ "." {% (d) => ({head: d[3], body: [], type: 'imp'}) %}
+rule_derivation -> relation_list _ ">>>" (">"):* _ relation_list _ "." {% (d) => ({head: d[5], body: d[0], type: 'imp'}) %}
+rule_derivation -> relation_list _ ">>>" (">"):* _ rule_command _ "." {% (d) => ({head: d[5], body: d[0], type: 'command'}) %}
+
+_derivation -> rule_derivation {% id %}
+_derivation -> derivation {% id %}
+
+derivation_block -> (_ _derivation):* _ {% (d) => d[0].map((r) => r[1]) %}
 
 ## section: rules
 #

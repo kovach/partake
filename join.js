@@ -221,6 +221,9 @@ function mkSym(value) {
 function mkSet(value) {
   return { tag: "set", value };
 }
+function mkBox(value) {
+  return { tag: "box", value };
+}
 
 function ppTerm(term) {
   switch (term.tag) {
@@ -234,6 +237,8 @@ function ppTerm(term) {
       return ppContext(term.value);
     case "call":
       return `#${term.fn}(${term.args.map(ppTerm).join(", ")})`;
+    case "box":
+      return `[box: ${term.value}]`;
     default:
       throw "todo";
   }
@@ -265,7 +270,7 @@ function uniqueInt() {
   return globalIdCounter++;
 }
 function freshId() {
-  return { tag: "sym", value: uniqueInt() };
+  return mkSym(uniqueInt());
 }
 
 function substituteTerm(js, binding, term) {
@@ -318,6 +323,7 @@ export {
   mkVar,
   mkSym,
   mkSet,
+  mkBox,
   tuplesOfDb,
   pp,
   cloneDb,

@@ -944,10 +944,12 @@ function parseProgram(text) {
     return dotExpandRuleBody(appendDone(body));
   }
   // filter comments. todo: lexer
-  text = text
-    .split("\n")
-    .filter((l) => !l.match(/^\s*#/))
-    .join("\n");
+  let removeCommentFromLine = (s) => /[^#]*/.exec(s);
+  // text = text
+  //   .split("\n")
+  //   .filter((l) => !l.match(/^\s*#/))
+  //   .join("\n");
+  text = text.split("\n").map(removeCommentFromLine).join("\n");
   let exprs = parseNonterminal("program", text);
   let defs = new ArrayMap();
   let triggers = new ArrayMap();

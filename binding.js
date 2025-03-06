@@ -8,6 +8,8 @@ function cloneTerm(term) {
       return structuredClone(term);
     case "set":
       return { tag: "set", value: term.value.map((b) => b.clone()) };
+    case "box":
+      return term; // !
     default:
       throw "";
   }
