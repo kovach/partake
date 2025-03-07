@@ -18,7 +18,7 @@ import {
   ppTuples,
   ppTerm,
 } from "./join.js";
-import { parseNonterminal } from "./parse.js";
+import { parseNonterminal, parseProgram } from "./parse.js";
 
 let unitTest2 = [
   "datalog2",
@@ -142,26 +142,26 @@ function mkBranch(state, rule, parent) {
   return mkNode("branch", parent, mkObj({ binding: emptyBinding(), rule }));
 }
 function tor(name, fn) {
-  return (...args) => (fn(...args) ? [["@" + name, ...args]] : []);
+  return (...args) => (fn(...args) ? [[...args]] : []);
 }
-function mainTest() {
-  let text = `
-node tag id parent _, rule tag 'before body
->>>>>>>
-node '_branch newId parent body, then newId id.
+let _true = mkInt(1);
+let tr = (x) => x.map((x) => [...x, _true]);
+function someRelation(i, o) {
+  return tr([[i, i]]);
+}
+let single =
+  (fn) =>
+  (...args) =>
+    tr([fn(...args)]);
 
-node tag id parent _, rule tag 'during body
->>>>>>> # initiate during rule
-node '_branch newId id body.
-
-node tag id parent _, rule tag 'after body
->>>>>>>
-node '_branch newId parent body, then newId id.
-
-delay e -> a, next-delay -> b, @lt a b
---------
-finished e.
-# watch tuple syntax? print when asserted or retracted
+function initBranch(body) {
+  return [body, mkBox({ binding: emptyBinding(), body })];
+}
+function updateBranch({ value: { binding, body } }) {
+  console.log("!!!!", binding, body);
+}
+const mainProgram = `
+delay e -> a, next-delay -> b, @lt a b --- finished e.
 
 node _ id _ _ --- node id.
 node '_branch id _ _ --- is-branch id.
@@ -187,17 +187,37 @@ then _ X, reach X Z, pc Z Y --- reach X Y.
 
 then A B, reach A X, reach B Y --- before X Y.
 
+############## Updates ##############
+
+######### Rule Activation
+node tag id parent _, rule tag 'before body, @init-branch body x
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+node '_branch new parent x, then new id.
+
+node tag id parent _, rule tag 'during body
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+node '_branch new id body.
+
+node tag id parent _, finished id, rule tag 'after body
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+node '_branch new parent x, then id new.
+
+######### Branch Update
 force id, node '_branch id _ body
->>>
-@updateBranch(body).
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+@update-branch(body).
 `;
 
-  let rules = parseRules(text);
+function mainTest(stories) {
+  let derivations = parseRules(mainProgram);
   let relTypes = { delay: "max", "next-delay": "min" };
   let js = {
     log: (...args) => {
       console.log("!!!!!!!!!! ", ...args);
     },
+    someRelation,
+    "init-branch": single(initBranch),
+    "update-branch": updateBranch,
     add: ({ value: a }, { value: b }) => mkInt(a + b),
     eq: tor("eq", (a, b) => {
       return valEqual(a, b);
@@ -213,16 +233,24 @@ force id, node '_branch id _ body
       throw "todo";
     },
   };
-  let { program, state } = setupState(rules, js, relTypes);
+  let { program, state } = setupState(derivations, js, relTypes);
   let s = toTag(mkSym);
   let no = mkSym(null);
-  addTuple(state, ["rule", s`turn`, s`during`, mkBox([1, 2, 3])]);
-  addTuple(state, ["rule", s`game`, s`after`, mkBox([])]);
-  addTuple(state, ["rule", s`turn`, s`before`, mkBox([])]);
+  //addTuple(state, ["rule", s`turn`, s`during`, mkBox([1, 2, 3])]);
+  //addTuple(state, ["rule", s`game`, s`after`, mkBox([])]);
+  //addTuple(state, ["rule", s`turn`, s`before`, mkBox([])]);
+  for (let [type, rules] of Object.entries(stories)) {
+    for (let [trigger, rule] of rules.map.entries()) {
+      console.log(type, trigger, rule);
+      addTuple(state, ["rule", mkSym(trigger), mkSym(type), mkBox(rule)]);
+    }
+  }
+  let tup = (...args) => addTuple(state, [...args]);
   let game = mkNode(state, s`game`, freshId(), no);
-  let t1 = mkNode(state, s`turn`, game, no);
-  let t2 = mkNode(state, s`turn`, game, no);
-  addTuple(state, ["then", t1, t2]);
+  //let t1 = mkNode(state, s`turn`, game, no);
+  //let t2 = mkNode(state, s`turn`, game, no);
+  //addTuple(state, ["then", t1, t2]);
+  tup("force", game);
 
   timeFn(() => seminaive(program, state));
   printDb(state);
@@ -248,8 +276,8 @@ function timeFn(fn) {
   return ms;
 }
 
-function setupState(rules, js, relationTypes) {
-  return { state: emptyState(), program: mkProgram(rules, js, relationTypes) };
+function setupState(derivations, js, relationTypes) {
+  return { state: emptyState(), program: mkProgram(derivations, js, relationTypes) };
 }
 
 function runTests() {
@@ -260,16 +288,28 @@ function runTests() {
 }
 export { runTests };
 
-function main() {
-  //runTests();
-  mainTest();
+function loadRules(fn) {
+  fetch("si3.mm")
+    .then((res) => res.text())
+    .then((text) => fn(parseProgram(text)));
 }
 
-main();
+function main(stories) {
+  //runTests();
+  mainTest(stories);
+}
 
-// [x]add rule to advance branch.
-// store correct state in branch node.
-//   call existing function?
-// try temporal pattern
+window.onload = () => loadRules(main);
+
+// [x]rule invocation code
+// [x]add rule to advance branch
+// [x]parse and load ruleset
+// [x]load rules as tuples
+// [x]store correct state in branch node
+// temporal pattern
+// log of *stable branch references*
+// update function
+//   new code for ~
+//   choose
 
 // query live db interface

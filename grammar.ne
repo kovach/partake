@@ -75,11 +75,12 @@ quantifier -> number {% (d) => ({tag: 'eq', count: d[0]}) %}
 quantifier -> "~" _ number {% (d) => ({tag: 'amapLimit', count: d[2]}) %}
 quantifier -> "max" _ number {% (d) => ({tag: 'limit', count: d[2]}) %}
 
-# todo: associativity
 event_expr -> identifier {% (d) => ({ tag: "literal", name: d[0]}) %}
-event_expr -> op event_expr _ ";" _ event_expr cp  {% (d) => ({ tag: "concurrent", a: d[1], b: d[5]}) %}
-event_expr -> op event_expr _ "->" _ event_expr cp {% (d) => ({ tag: "sequence", a: d[1], b: d[5]}) %}
-event_expr -> "[" _ event_expr _ "|" _ pure_query _ "]" {% (d) => ({ tag: "with-tuples", body: d[2], tuples: d[6]}) %}
+
+# todo
+#event_expr -> op event_expr _ ";" _ event_expr cp  {% (d) => ({ tag: "concurrent", a: d[1], b: d[5]}) %}
+#event_expr -> op event_expr _ "->" _ event_expr cp {% (d) => ({ tag: "sequence", a: d[1], b: d[5]}) %}
+#event_expr -> "[" _ event_expr _ "|" _ pure_query _ "]" {% (d) => ({ tag: "with-tuples", body: d[2], tuples: d[6]}) %}
 
 episode_expr -> relation {% (d) => [{ tag: "observation", pattern: d[0]}] %}
 episode_expr -> op pure_query cp _ "=>" _ op pure_query cp
@@ -98,6 +99,7 @@ episode_expr -> term _ bin_op _ term
   {% (d) => [{tag: 'binOp', operator: d[2], l: d[0], r: d[4]}] %}
 episode_expr -> "!done" {% () => [{tag: "done"}] %}
 episode_expr -> "!do" __ event_expr {% (d) => [{tag: "do", value: d[2]}] %}
+episode_expr -> "~" event_expr {% (d) => [{tag: "do", value: d[1]}] %}
 episode_expr -> op rule_body cp {% (d) => [{tag: "subbranch", branch: d[1] }] %}
 
 episode_list -> episode_expr (_ ","):? {% (d) => d[0] %}
@@ -106,11 +108,12 @@ episode_list -> episode_expr comma episode_list {% (d) => d[0].concat(d[2]) %}
 rule_body -> episode_list {% id %}
 rule_body -> null {% () => [] %}
 
-rule_separator -> _ ":" _ {% () => 'def' %}
-rule_separator -> _ "->" _ {% () => 'trigger' %}
+rule_separator -> _ ":" _ {% id %}
+#rule_separator -> _ "->" _ {% () => 'trigger' %}
 
-rule -> identifier rule_separator rule_body _ "."
-  {% (d) => ({head: d[0], type: d[1], body: d[2] }) %}
+rule -> "!" identifier rule_separator rule_body _ "." {% (d) => ({head: d[1], type: 'before', body: d[3] }) %}
+rule -> identifier rule_separator rule_body _ "." {% (d) => ({head: d[0], type: 'during', body: d[2] }) %}
+rule -> identifier "!" rule_separator rule_body _ "." {% (d) => ({head: d[0], type: 'after', body: d[3] }) %}
 
 program -> (_ rule):* {% (d) => d[0].map((r) => r[1]) %}
 

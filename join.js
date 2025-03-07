@@ -205,6 +205,10 @@ function valEqual(a, b) {
     case "sym":
     case "int":
       return a.value === b.value;
+    case "box":
+      return true; // todo
+    default:
+      throw "";
   }
 }
 

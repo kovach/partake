@@ -87,11 +87,9 @@ class MonoidMap {
     return v;
   }
   clone() {
-    return new MonoidMap(
-      this.zero,
-      this.plus,
-      new Map(structuredClone(Array.from(this.map.entries())))
-    );
+    let entries = Array.from(this.map.entries());
+    //return new MonoidMap(this.zero, this.plus, new Map(structuredClone(entries)));
+    return new MonoidMap(this.zero, this.plus, new Map(entries));
   }
   update(key, fn) {
     this.map.set(key, fn(this.get(key)));

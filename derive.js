@@ -17,17 +17,18 @@ function tup(tag, values, weight) {
 }
 function evalQuery({ db, js }, query, context = [emptyBinding()]) {
   // redundant. done to ensure result does not contain any input context
+  //if (query.length === 0) return context.map((c) => c.clone());
   if (query.length === 0) return context.map((c) => c.clone());
 
   return query.reduce(joinBindings, context);
 
   function* readDb(tag, c, values) {
-    // todo!
     let extern = tag[0] === "@";
     if (extern) {
-      tag = tag.slice(1);
-      for (let x of js[tag](...values)) {
-        yield x;
+      console.log("!!", tag, values);
+      for (let x of js[tag.slice(1)](...values)) {
+        console.log("!!!", x);
+        yield [tag, ...x];
       }
     } else {
       for (let [tuple, _] of db.entries()) {
@@ -41,7 +42,7 @@ function evalQuery({ db, js }, query, context = [emptyBinding()]) {
     let ts = terms(pattern);
     for (let c of context) {
       let values = ts.map((t) => evalTerm(js, c, t));
-      // handle negation specially
+      // todo: handle negation specially
       // if weight is 0 after eval, assert other values are also bound
       //   getWeight, proceed
       // otherwise, ...
