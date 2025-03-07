@@ -35,9 +35,7 @@ term -> "'" identifier {% (d) => ({tag: 'sym', value: d[1]}) %}
 term -> term "." identifier {% (d) => ({tag: 'dot', left: d[0], right: d[2]}) %}
 term -> "." predicate {% (d) => ({tag: 'dot', left: null, right: d[1]}) %}
 
-# pred2 x y
-#relation -> predicate (__ term):* {% (d) => ({tag: d[0], terms: d[1].map(t => t[1])}) %}
-#relation -> predicate (__ term):*            {% (d) => ({tag: d[1], terms: d[1].map(t => t[1]).concat([true])}) %}
+# pred2 x y @fn(x)
 relation -> predicate (__ term):*               {% (d) => ({tag: d[0], terms: d[1].map(t => t[1]).concat([{tag: 'int', value: 1}])}) %}
 relation -> predicate (__ term):* _ "->" _ term {% (d) => ({tag: d[0], terms: d[1].map(t => t[1]).concat([d[5]])}) %}
 relation -> "@" predicate (__ term):*           {% (d) => ({tag: "@"+d[1], terms: d[2].map(t => t[1]).concat([{tag: 'int', value: 1}])}) %}
@@ -111,9 +109,14 @@ rule_body -> null {% () => [] %}
 rule_separator -> _ ":" _ {% id %}
 #rule_separator -> _ "->" _ {% () => 'trigger' %}
 
-rule -> "!" identifier rule_separator rule_body _ "." {% (d) => ({head: d[1], type: 'before', body: d[3] }) %}
-rule -> identifier rule_separator rule_body _ "." {% (d) => ({head: d[0], type: 'during', body: d[2] }) %}
-rule -> identifier "!" rule_separator rule_body _ "." {% (d) => ({head: d[0], type: 'after', body: d[3] }) %}
+trigger -> "!" identifier  {% (d) => ({type: 'before', predicate: d[1]}) %}
+trigger -> identifier  {% (d) => ({type: 'during', predicate: d[0]}) %}
+trigger -> identifier "!"  {% (d) => ({type: 'after', predicate: d[0]}) %}
+rule_header -> "{" _ identifier _ "}" _ trigger ":" {% (d) => ({id: d[2], trigger: d[6] }) %}
+rule -> rule_header _ rule_body _ "." {% (d) => ({header: d[0], body: d[2] }) %}
+#rule -> "!" identifier rule_separator rule_body _ "." {% (d) => ({head: d[1], type: 'before', body: d[3] }) %}
+#rule -> identifier rule_separator rule_body _ "." {% (d) => ({head: d[0], type: 'during', body: d[2] }) %}
+#rule -> identifier "!" rule_separator rule_body _ "." {% (d) => ({head: d[0], type: 'after', body: d[3] }) %}
 
 program -> (_ rule):* {% (d) => d[0].map((r) => r[1]) %}
 

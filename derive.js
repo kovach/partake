@@ -1,3 +1,4 @@
+// TODO: match zero
 import {
   emptyBinding,
   evalTerm,
@@ -8,6 +9,7 @@ import {
   isHole,
   valEqual,
   mkInt,
+  mkBox,
   ppTerm,
 } from "./join.js";
 import { assert, KeyedMap, ArrayMap } from "./collections.js";
@@ -25,9 +27,7 @@ function evalQuery({ db, js }, query, context = [emptyBinding()]) {
   function* readDb(tag, c, values) {
     let extern = tag[0] === "@";
     if (extern) {
-      console.log("!!", tag, values);
       for (let x of js[tag.slice(1)](...values)) {
-        console.log("!!!", x);
         yield [tag, ...x];
       }
     } else {
@@ -122,6 +122,7 @@ function emptyState() {
     dbAggregates: new KeyedMap(key),
     worklist: [],
     init: true,
+    dependencies: new ArrayMap(new KeyedMap(key)),
   };
 }
 
@@ -175,9 +176,9 @@ let mod = {
  */
 function seminaive(program, state) {
   let { rules, relationTypes, js } = program;
-  let { dbAtoms, dbAggregates, worklist, init } = state;
+  let { dependencies, dbAtoms, dbAggregates, worklist, init } = state;
   // !!! TODO
-  let dependencies = new ArrayMap(new KeyedMap(key));
+  //let dependencies = new ArrayMap(new KeyedMap(key));
   let debug = false;
 
   if (init) {
@@ -286,7 +287,12 @@ function seminaive(program, state) {
 
   function getWeight(core) {
     let { zero, add } = reductionType(tag(core));
-    let weight = dbAtoms.get(core).reduce((acc, { weight }) => add(acc, weight), zero);
+    let values = dbAtoms.get(core);
+    let weight = values.reduce((acc, { weight }) => add(acc, weight), zero);
+    if (values.length > 2) {
+      //console.log("\n\nasdf ", values);
+      //console.log("asdf ", weight.value);
+    }
     return core.concat([weight]);
   }
   function reductionType(tag) {
@@ -298,6 +304,7 @@ function seminaive(program, state) {
       min: { type: mkInt, add: wrap(mkInt, Math.min), zero: mkInt(Infinity) },
       max: { type: mkInt, add: wrap(mkInt, Math.max), zero: mkInt(-Infinity) },
       num: { type: mkInt, add: wrap(mkInt, (a, b) => a + b), zero: mkInt(0) },
+      last: { type: mkBox, add: wrap(mkBox, (_a, b) => b), zero: mkBox(null) },
     };
     let ty = relationTypes[tag] || "bool";
     assert(ty);
@@ -332,10 +339,11 @@ function seminaive(program, state) {
   }
   function retractTuple(tuple) {
     log("retractTuple: ", ppTuple(tuple));
-    for (let ruleBinding of depends(tuple)) {
+    for (let ruleBinding of dependencies.get(tuple)) {
       log("retractBinding: ", ruleBinding);
       retractBinding(ruleBinding);
     }
+    dependencies.reset(tuple);
     worklist = worklist.filter(({ tuple: t }) => !tupleEqual(t, tuple));
     dbAggregates.delete(tuple);
   }

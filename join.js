@@ -206,7 +206,9 @@ function valEqual(a, b) {
     case "int":
       return a.value === b.value;
     case "box":
-      return true; // todo
+      //console.log("box-eq? ", a.value, b.value);
+      //console.log(JSON.stringify(a.value), JSON.stringify(b.value));
+      return JSON.stringify(a.value) === JSON.stringify(b.value); // TODO
     default:
       throw "";
   }

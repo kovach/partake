@@ -1,4 +1,4 @@
-import { assert, toTag } from "./collections.js";
+import { assert, MonoidMap, splitArray, toTag } from "./collections.js";
 import {
   fixRules,
   mkProgram,
@@ -133,13 +133,10 @@ function parseRules(text) {
   return fixRules(parseNonterminal("derivation_block", removeComments(text)));
 }
 
-function mkNode(state, tag, parent, value) {
+function mkNode(state, tag) {
   let id = freshId();
-  addTuple(state, ["node", tag, id, parent, value]);
+  addTuple(state, ["node", tag, id]);
   return id;
-}
-function mkBranch(state, rule, parent) {
-  return mkNode("branch", parent, mkObj({ binding: emptyBinding(), rule }));
 }
 function tor(name, fn) {
   return (...args) => (fn(...args) ? [[...args]] : []);
@@ -154,23 +151,21 @@ let single =
   (...args) =>
     tr([fn(...args)]);
 
-function initBranch(body) {
-  return [body, mkBox({ binding: emptyBinding(), body })];
-}
-function updateBranch({ value: { binding, body } }) {
-  console.log("!!!!", binding, body);
-}
+let branchCounters = new MonoidMap(
+  () => 0,
+  (a, b) => a + b
+);
 const mainProgram = `
 delay e -> a, next-delay -> b, @lt a b --- finished e.
 
-node _ id _ _ --- node id.
-node '_branch id _ _ --- is-branch id.
+node _ id --- node id.
+node '_branch id --- is-branch id.
 
-node '_branch id _ body, @lt 0 @length(body)
+node '_branch id, body id -> body, @nonemptyBody body
 --------------------------------------------
 unfinished id.
 
-node parent, reach parent x, unfinished x --- unfinished parent.
+node x, reach x y, unfinished y --- unfinished x.
 
 node id --- delay id -> 0.
 before x y, delay x -> a --- delay y -> @add(a,1).
@@ -178,46 +173,79 @@ unfinished x, delay x -> val --- next-delay -> val.
 
 is-branch id, delay id -> v, next-delay -> v --- active id.
 
-node _ id parent _
---- pc parent id.
-
-node _ id _ _ --- reach id id.
-
-then _ X, reach X Z, pc Z Y --- reach X Y.
+node _ id --- reach id id.
+then _ X, reach X Z, contains Z Y --- reach X Y.
+then X _, reach X Z, contains Z Y --- reach X Y.
 
 then A B, reach A X, reach B Y --- before X Y.
 
 ############## Updates ##############
 
 ######### Rule Activation
-node tag id parent _, rule tag 'before body, @init-branch body x
->>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-node '_branch new parent x, then new id.
+# TODO:
+#node tag id _, rule name tag 'before body, @initBranch name body x
+#>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+#node '_branch new parent, body new -> x, then new id.
+#node tag id _, finished id, rule name tag 'after body, @initBranch name body x
+#>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+#node '_branch new parent, body new -> x, then id new.
 
-node tag id parent _, rule tag 'during body
+node tag id, rule name tag 'during body, @initBranch name body L B
 >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-node '_branch new id body.
-
-node tag id parent _, finished id, rule tag 'after body
->>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-node '_branch new parent x, then id new.
+node '_branch New, contains id New, body New -> B, label New L, steps New -> 1.
 
 ######### Branch Update
-force id, node '_branch id _ body
->>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-@update-branch(body).
+force L -> n, label I L, steps I -> m, @lt m n, body I -> B, @updateBranch I B B'
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+body I -> B', steps I -> 1.
+
+--- force 'start_0 -> 7.
 `;
 
+function initBranch(name, body) {
+  let count = branchCounters.add(name, 1);
+  return [
+    name,
+    body,
+    mkSym(name.value + "_" + count),
+    mkBox({ binding: emptyBinding(), body: body.value }),
+  ];
+}
 function mainTest(stories) {
+  let relTypes = {
+    delay: "max",
+    "next-delay": "min",
+    body: "last",
+    force: "num",
+    steps: "num",
+  };
+
+  function updateBranch(id, box) {
+    let {
+      value: { binding, body },
+    } = box;
+    console.log("!!!!", id, binding, body);
+    let [op, rest] = splitArray(body);
+    switch (op.tag) {
+      case "do":
+        console.log("do");
+        break;
+      default:
+        throw "";
+    }
+    let result = mkBox({ ...box.value });
+    result.value.body = rest;
+    //console.log("??", result);
+    return [id, box, result];
+  }
   let derivations = parseRules(mainProgram);
-  let relTypes = { delay: "max", "next-delay": "min" };
   let js = {
     log: (...args) => {
       console.log("!!!!!!!!!! ", ...args);
     },
     someRelation,
-    "init-branch": single(initBranch),
-    "update-branch": updateBranch,
+    initBranch: single(initBranch),
+    updateBranch: single(updateBranch),
     add: ({ value: a }, { value: b }) => mkInt(a + b),
     eq: tor("eq", (a, b) => {
       return valEqual(a, b);
@@ -228,31 +256,37 @@ function mainTest(stories) {
       return a.value < b.value;
     }),
     length: (a) => mkInt(a.value.length),
-    force: (x) => {
-      console.log("here: ", x);
-      throw "todo";
-    },
+    nonemptyBody: tor("nonemptyBody", ({ value: { body } }) => {
+      console.log("HH", body);
+      return body.length > 0;
+    }),
   };
   let { program, state } = setupState(derivations, js, relTypes);
   let s = toTag(mkSym);
   let no = mkSym(null);
-  //addTuple(state, ["rule", s`turn`, s`during`, mkBox([1, 2, 3])]);
-  //addTuple(state, ["rule", s`game`, s`after`, mkBox([])]);
-  //addTuple(state, ["rule", s`turn`, s`before`, mkBox([])]);
-  for (let [type, rules] of Object.entries(stories)) {
-    for (let [trigger, rule] of rules.map.entries()) {
-      console.log(type, trigger, rule);
-      addTuple(state, ["rule", mkSym(trigger), mkSym(type), mkBox(rule)]);
+  for (let [type, ruleGroup] of Object.entries(stories)) {
+    for (let [trigger, rules] of ruleGroup.map.entries()) {
+      for (let { id, body } of rules) {
+        console.log("rule: ", id, type, trigger, body);
+        addTuple(state, ["rule", mkSym(id), mkSym(trigger), mkSym(type), mkBox(body)]);
+      }
     }
   }
-  let tup = (...args) => addTuple(state, [...args]);
-  let game = mkNode(state, s`game`, freshId(), no);
-  //let t1 = mkNode(state, s`turn`, game, no);
-  //let t2 = mkNode(state, s`turn`, game, no);
-  //addTuple(state, ["then", t1, t2]);
-  tup("force", game);
-
+  let tup =
+    (...args) =>
+    () =>
+      addTuple(state, [...args]);
+  mkNode(state, s`game`);
+  let log = [
+    //tup("force", mkSym("start_0")),
+    //tup("force", mkSym("turn_0")),
+    //tup("force", mkSym("turn_1")),
+  ];
   timeFn(() => seminaive(program, state));
+  for (let t of log) {
+    t();
+    timeFn(() => seminaive(program, state));
+  }
   printDb(state);
   console.log("db.size: ", state.dbAggregates.map.size);
 }
@@ -306,10 +340,12 @@ window.onload = () => loadRules(main);
 // [x]parse and load ruleset
 // [x]load rules as tuples
 // [x]store correct state in branch node
-// temporal pattern
-// log of *stable branch references*
+// [x]stable branch reference type
+// [x]iterate log of refs
+// delete tuple in >>>
 // update function
 //   new code for ~
 //   choose
+// temporal pattern
 
 // query live db interface

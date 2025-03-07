@@ -24,7 +24,7 @@ class Binding {
   }
 
   toJSON() {
-    return "a binding";
+    return JSON.stringify(Array.from(this.substitution.entries()));
   }
 
   *[Symbol.iterator]() {

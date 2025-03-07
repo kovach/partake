@@ -173,10 +173,16 @@ function parseProgram(text) {
   };
   for (let e of exprs) {
     if (e === null) continue;
-    let { type, head, body } = e;
+    let {
+      header: {
+        id,
+        trigger: { type, predicate },
+      },
+      body,
+    } = e;
     body = fixBody(body);
     assert(type);
-    program[type].add(head, body);
+    program[type].add(predicate, { id, body });
   }
   return program;
 }
