@@ -199,7 +199,7 @@ force L -> n, label I L, steps I -> m, @lt m n, body I -> B, @updateBranch I B B
 >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 body I -> B', steps I -> 1.
 
---- force 'start_0 -> 7.
+--- force 'start_0 -> 2.
 `;
 
 function initBranch(name, body) {
@@ -342,10 +342,10 @@ window.onload = () => loadRules(main);
 // [x]store correct state in branch node
 // [x]stable branch reference type
 // [x]iterate log of refs
-// delete tuple in >>>
 // update function
 //   new code for ~
 //   choose
+// delete tuple in >>>
 // temporal pattern
 
 // query live db interface

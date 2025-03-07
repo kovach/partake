@@ -120,7 +120,8 @@ function emptyState() {
   return {
     dbAtoms: new ArrayMap(new KeyedMap(key)),
     dbAggregates: new KeyedMap(key),
-    worklist: [],
+    addWorklist: [],
+    delWorklist: [],
     init: true,
     dependencies: new ArrayMap(new KeyedMap(key)),
   };
@@ -176,7 +177,7 @@ let mod = {
  */
 function seminaive(program, state) {
   let { rules, relationTypes, js } = program;
-  let { dependencies, dbAtoms, dbAggregates, worklist, init } = state;
+  let { dependencies, dbAtoms, dbAggregates, addWorklist, delWorklist, init } = state;
   // !!! TODO
   //let dependencies = new ArrayMap(new KeyedMap(key));
   let debug = false;
@@ -187,16 +188,18 @@ function seminaive(program, state) {
     state.init = false;
   }
   // Rules with LHS
-  while (worklist.length > 0) {
-    let { tuple, mod: m } = worklist.pop();
-    log("pop tuple: ", ppTuple(tuple), m);
-    mod.cases(
-      m,
-      () => assertTuple(tuple),
-      () => retractTuple(tuple)
-    );
+  while (addWorklist.length + delWorklist.length > 0) {
+    if (delWorklist.length > 0) {
+      let tuple = delWorklist.pop();
+      log("pop del tuple: ", ppTuple(tuple));
+      retractTuple(tuple);
+    } else {
+      let tuple = addWorklist.pop();
+      log("pop cadd tuple: ", ppTuple(tuple));
+      assertTuple(tuple);
+    }
   }
-  state.worklist = worklist;
+  state.addWorklist = addWorklist;
   //throw "";
   return null;
 
@@ -277,9 +280,9 @@ function seminaive(program, state) {
     let newWeighted = getWeight(core(atom));
     // todo: batching
     if (!tupleEqual(weight(oldWeighted), weight(newWeighted))) {
-      queueTuple(oldWeighted, mod.del);
+      queueTupleDel(oldWeighted);
       let { zero } = reductionType(tag(atom));
-      if (!valEqual(weight(newWeighted), zero)) queueTuple(newWeighted);
+      if (!valEqual(weight(newWeighted), zero)) queueTupleAdd(newWeighted);
     } else {
       log("no change: ", oldWeighted, newWeighted);
     }
@@ -312,10 +315,15 @@ function seminaive(program, state) {
     return semirings[ty];
   }
   // actually makes worklist into a stack
-  function queueTuple(tuple, m = mod.add) {
-    log("queueTuple: ", ppTuple(tuple));
+  function queueTupleAdd(tuple) {
+    log("queueTupleAdd: ", ppTuple(tuple));
     //worklist = [{ tuple, mod: mod.add }].concat(worklist);
-    worklist.push({ tuple, mod: m });
+    addWorklist.push(tuple);
+  }
+  function queueTupleDel(tuple) {
+    log("queueTupleDel: ", ppTuple(tuple));
+    //worklist = [{ tuple, mod: mod.add }].concat(worklist);
+    delWorklist.push(tuple);
   }
   function bindingEq(b1, b2) {
     return b1.eq(b2, valEqual);
@@ -344,7 +352,7 @@ function seminaive(program, state) {
       retractBinding(ruleBinding);
     }
     dependencies.reset(tuple);
-    worklist = worklist.filter(({ tuple: t }) => !tupleEqual(t, tuple));
+    addWorklist = addWorklist.filter((t) => !tupleEqual(t, tuple));
     dbAggregates.delete(tuple);
   }
   function retractBinding(x) {
@@ -385,11 +393,11 @@ function substitute(js, binding, terms, allowFresh = false) {
 // External interface to add/remove boolean state tuples
 function addTuple(state, tuple) {
   tuple = tuple.concat(mkInt(1));
-  state.worklist.push({ tuple, mod: mod.add });
+  state.addWorklist.push(tuple);
 }
 function delTuple(state, tuple) {
   tuple = tuple.concat(mkInt(1));
-  state.worklist.push({ tuple, mod: mod.del });
+  state.delWorklist.push(tuple);
 }
 
 export { fixRules, emptyState, mkProgram, seminaive, addTuple, delTuple };
