@@ -122,8 +122,8 @@ function dotExpandRuleBody(body) {
           return fix(prefix).concat([{ tag: "retract", query: query }]);
         }
         case "assert": {
-          let { prefix, query } = dotExpandQuery(p.tuples);
-          return fix(prefix).concat([{ tag: "assert", tuples: query }]);
+          let { prefix, relation } = dotExpandRelation(p.tuple);
+          return fix(prefix).concat([{ tag: "assert", tuple: relation }]);
         }
         case "subquery": {
           let { name } = p;
@@ -155,8 +155,8 @@ function dotExpandRuleBody(body) {
 function parseProgram(text) {
   function appendDone(body) {
     if (body.length === 0) return [{ tag: "done" }];
-    let last = body[body.length - 1];
-    if (last.tag !== "done" && last.tag !== "do") return body.concat([{ tag: "done" }]);
+    //let last = body[body.length - 1];
+    //if (last.tag !== "done" && last.tag !== "do") return body.concat([{ tag: "done" }]);
     return body;
   }
   function fixBody(body) {

@@ -1,12 +1,5 @@
-import { assert, MonoidMap, splitArray, toTag } from "./collections.js";
-import {
-  fixRules,
-  mkProgram,
-  emptyState,
-  seminaive,
-  addTuple,
-  delTuple,
-} from "./derive.js";
+import { assert, range, MonoidMap, splitArray, toTag } from "./collections.js";
+import { parseNonterminal, parseProgram } from "./parse.js";
 import {
   emptyBinding,
   freshId,
@@ -18,114 +11,19 @@ import {
   ppTuples,
   ppTerm,
 } from "./join.js";
-import { parseNonterminal, parseProgram } from "./parse.js";
-
-let unitTest2 = [
-  "datalog2",
-  () => {
-    let rules = fixRules(
-      parseNonterminal(
-        "derivation_block",
-        `
----
-root 1, adj 1 2 1, adj 2 3 1, adj 3 4 1, adj 1 4 22.
-
-root a --- dist a -> 0.
-dist a -> d --- foo a -> d.
-dist x -> d1, adj x y d2 --- dist y -> @add(d1, d2).
-`
-      )
-    );
-    let { state, program } = setupState(rules, js, {
-      dist: "min",
-      foo: "num",
-    });
-    seminaive(program, state);
-    assert(state.dbAggregates.map.size === 12);
-    return state;
-  },
-];
-let unitTest3 = [
-  "datalog3",
-  () => {
-    let rules = fixRules(
-      parseNonterminal(
-        "derivation_block",
-        `
----
-node 1, node 2, node 3, node 4,
-adj 1 2 1, adj 2 3 1, adj 3 4 1, adj 1 4 22.
-
-node a --- dist a a -> 0.
-dist a b -> d1, adj b c d2 --- dist a c -> @add(d1, d2).
-`
-      )
-    );
-    let { state, program } = setupState(rules, js, { dist: "min" });
-    seminaive(program, state);
-    assert(state.dbAggregates.map.size === 18);
-    return state;
-  },
-];
-let unitTest4 = [
-  "datalog4",
-  () => {
-    let ruleText0 = `
----
-land 1, land 2, land 3, land 4,
-land 5, land 6, land 7, land 8.
-`;
-    // omit land 1
-    let ruleText1 = `
----
-land 2, land 3, land 4,
-land 5, land 6, land 7, land 8.
-`;
-    // board C
-    let ruleText2 = `
----
-adjacent 1 2, adjacent 1 5, adjacent 1 6,
-adjacent 2 3, adjacent 2 4, adjacent 2 5,
-adjacent 3 4, adjacent 4 5, adjacent 4 7,
-adjacent 5 6, adjacent 5 7,
-adjacent 6 7, adjacent 6 8,
-adjacent 7 8.
-
-adjacent A B --- adj A B.
-adjacent A B --- adj B A.
-
-land A
-------
-dist A A -> 0.
-
-dist A B -> D, adj B C
-----------------------
-dist A C -> @add(D, 1).
-`;
-    let rules0 = fixRules(parseNonterminal("derivation_block", ruleText0 + ruleText2));
-    let rules1 = fixRules(parseNonterminal("derivation_block", ruleText1 + ruleText2));
-    {
-      let { state, program } = setupState(rules0, js, { dist: "min" });
-      timeFn(() => seminaive(program, state));
-      assert(state.dbAggregates.map.size === 114);
-    }
-    {
-      let { state, program } = setupState(rules1, js, { dist: "min" });
-      seminaive(program, state);
-      assert(state.dbAggregates.map.size === 105);
-      addTuple(state, ["land", mkInt(1)]);
-      seminaive(program, state);
-      // 9 more tuples: 8 `dist` and 1 `land`
-      assert(state.dbAggregates.map.size === 114);
-    }
-    return null;
-  },
-];
-
-let js = {
-  incr: ({ value: a }) => mkInt(a + 1),
-  add: ({ value: a }, { value: b }) => mkInt(a + b),
-};
+import {
+  fixRules,
+  mkProgram,
+  emptyState,
+  evalQuery,
+  substitute,
+  seminaive,
+  addTuple,
+  delTuple,
+  core,
+  weight,
+  reductionType,
+} from "./derive.js";
 
 function parseRules(text) {
   let removeCommentFromLine = (s) => /[^#]*/.exec(s);
@@ -138,23 +36,19 @@ function mkNode(state, tag) {
   addTuple(state, ["node", tag, id]);
   return id;
 }
+function mkChildNode(state, tag, parent) {
+  let newId = mkNode(state, tag);
+  addTuple(state, ["contains", parent, newId]);
+}
 function tor(name, fn) {
   return (...args) => (fn(...args) ? [[...args]] : []);
 }
-let _true = mkInt(1);
 let tr = (x) => x.map((x) => [...x, _true]);
-function someRelation(i, o) {
-  return tr([[i, i]]);
-}
 let single =
   (fn) =>
   (...args) =>
     tr([fn(...args)]);
 
-let branchCounters = new MonoidMap(
-  () => 0,
-  (a, b) => a + b
-);
 const mainProgram = `
 delay e -> a, next-delay -> b, @lt a b --- finished e.
 
@@ -173,7 +67,7 @@ unfinished x, delay x -> val --- next-delay -> val.
 
 is-branch id, delay id -> v, next-delay -> v --- active id.
 
-node _ id --- reach id id.
+node id --- reach id id.
 then _ X, reach X Z, contains Z Y --- reach X Y.
 then X _, reach X Z, contains Z Y --- reach X Y.
 
@@ -183,6 +77,10 @@ then A B, reach A X, reach B Y --- before X Y.
 
 ######### Rule Activation
 # TODO:
+#delete: forceSteps L -> n, label I L, steps I -> m, @le m n, body I -> B, @updateBranch I B B'
+#>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+#body I -> B', steps I -> 1.
+
 #node tag id _, rule name tag 'before body, @initBranch name body x
 #>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 #node '_branch new parent, body new -> x, then new id.
@@ -192,18 +90,28 @@ then A B, reach A X, reach B Y --- before X Y.
 
 node tag id, rule name tag 'during body, @initBranch name body L B
 >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-node '_branch New, contains id New, body New -> B, label New L, steps New -> 1.
+node '_branch New, contains id New, body New B, label New L.
 
 ######### Branch Update
-force L -> n, label I L, steps I -> m, @lt m n, body I -> B, @updateBranch I B B'
+force L x, label I L, contains P I, body I B, @updateBranch I B B'
 >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-body I -> B', steps I -> 1.
+body I' B', label I' L', succ I I', contains P I'.
 
---- force 'start_0 -> 2.
+body I B, label I L --- remaining-steps I L @length(@story(B)).
+
+succ I I' --- old I.
+node I, old I -> 0 --- tip I.
+
 `;
 
+let branchCounters = new MonoidMap(
+  () => ({
+    count: 0,
+  }),
+  (l, r) => (l.count += r)
+);
 function initBranch(name, body) {
-  let count = branchCounters.add(name, 1);
+  let { count } = branchCounters.add(name.value, 1);
   return [
     name,
     body,
@@ -211,59 +119,7 @@ function initBranch(name, body) {
     mkBox({ binding: emptyBinding(), body: body.value }),
   ];
 }
-function mainTest(stories) {
-  let relTypes = {
-    delay: "max",
-    "next-delay": "min",
-    body: "last",
-    force: "num",
-    steps: "num",
-  };
-
-  function updateBranch(id, box) {
-    let {
-      value: { binding, body },
-    } = box;
-    console.log("!!!!", id, binding, body);
-    let [op, rest] = splitArray(body);
-    switch (op.tag) {
-      case "do":
-        console.log("do");
-        break;
-      default:
-        throw "";
-    }
-    let result = mkBox({ ...box.value });
-    result.value.body = rest;
-    //console.log("??", result);
-    return [id, box, result];
-  }
-  let derivations = parseRules(mainProgram);
-  let js = {
-    log: (...args) => {
-      console.log("!!!!!!!!!! ", ...args);
-    },
-    someRelation,
-    initBranch: single(initBranch),
-    updateBranch: single(updateBranch),
-    add: ({ value: a }, { value: b }) => mkInt(a + b),
-    eq: tor("eq", (a, b) => {
-      return valEqual(a, b);
-    }),
-    lt: tor("lt", (a, b) => {
-      //console.log(a, b);
-      //console.log(a.value < b.value);
-      return a.value < b.value;
-    }),
-    length: (a) => mkInt(a.value.length),
-    nonemptyBody: tor("nonemptyBody", ({ value: { body } }) => {
-      console.log("HH", body);
-      return body.length > 0;
-    }),
-  };
-  let { program, state } = setupState(derivations, js, relTypes);
-  let s = toTag(mkSym);
-  let no = mkSym(null);
+function loadRuleTuples(state, stories) {
   for (let [type, ruleGroup] of Object.entries(stories)) {
     for (let [trigger, rules] of ruleGroup.map.entries()) {
       for (let { id, body } of rules) {
@@ -272,33 +128,154 @@ function mainTest(stories) {
       }
     }
   }
+}
+
+let _true = mkInt(1);
+let updateBranch = (executionContext, id, box) => {
+  let {
+    state,
+    program: { js },
+  } = executionContext;
+  let {
+    value: { binding, body },
+  } = box;
+  console.log("!!!!", id, binding, body);
+  let [op, rest] = splitArray(body);
+  let result = mkBox({ ...box.value });
+  result.value.body = rest;
+  function mk(binding) {
+    return [id, box, mkBox({ binding, body: rest }), _true];
+  }
+  switch (op.tag) {
+    case "do":
+      mkChildNode(state, mkSym(op.value.name), id);
+      return [mk(binding)];
+    case "observation": {
+      let pattern = [op.pattern.tag].concat(op.pattern.terms);
+      let bindings = af(evalQuery({ db: state.dbAggregates, js }, [pattern], [binding]));
+      return bindings.map(mk);
+    }
+    // here
+    case "assert": {
+      let pattern = core([op.tuple.tag].concat(op.tuple.terms));
+      binding = binding.clone();
+      let tuple = substitute(js, binding, pattern, true);
+      addTuple(state, tuple);
+      return [mk(binding)];
+    }
+    default:
+      throw "";
+  }
+};
+
+function mainTest(stories) {
+  let relTypes = {
+    delay: "max",
+    "next-delay": "min",
+    //body: "last",
+    steps: "num",
+    forceSteps: "num",
+  };
+  function updateBranch_(...args) {
+    return updateBranch(executionContext, ...args);
+  }
+
+  let derivations = parseRules(mainProgram);
+
+  let js = {
+    log: (...args) => {
+      console.log("!!!!!!!!!! ", ...args);
+    },
+    initBranch: single(initBranch),
+    updateBranch: updateBranch_,
+    add: ({ value: a }, { value: b }) => mkInt(a + b),
+    eq: tor("eq", (a, b) => {
+      return valEqual(a, b);
+    }),
+    lt: tor("lt", (a, b) => {
+      return a.value < b.value;
+    }),
+    le: tor("le", (a, b) => {
+      return a.value <= b.value;
+    }),
+    length: (a) => mkInt(a.value.length),
+    story: ({ value: { body } }) => {
+      return mkBox(body);
+    },
+    nonemptyBody: tor("nonemptyBody", ({ value: { body } }) => {
+      return body.length > 0;
+    }),
+  };
+
+  let s = toTag(mkSym);
   let tup =
     (...args) =>
     () =>
       addTuple(state, [...args]);
+  let force = (x) => tup("force", mkSym(x), freshId());
+  let forcen = (n, x) => range(n).map((i) => tup("force", mkSym(x), freshId()));
+
+  /* setup */
+  let executionContext = setupState(derivations, js, relTypes);
+  let { state } = executionContext;
+  loadRuleTuples(state, stories);
   mkNode(state, s`game`);
-  let log = [
-    //tup("force", mkSym("start_0")),
-    //tup("force", mkSym("turn_0")),
-    //tup("force", mkSym("turn_1")),
+
+  /* execute log of actions */
+  // prettier-ignore
+  let thelog = [
+    ...forcen(1, "start_1"), // done: 1
+    ...forcen(1, "setup_1"), // done: 2
+    ...forcen(0, "turn_1"),  // done: 6
+    ...forcen(0, 'spirit-phase_1'), // 5
   ];
-  timeFn(() => seminaive(program, state));
-  for (let t of log) {
+  for (let t of thelog) {
     t();
-    timeFn(() => seminaive(program, state));
+    timeFn(() => seminaive(executionContext));
   }
-  printDb(state);
-  console.log("db.size: ", state.dbAggregates.map.size);
+  printExecContext(executionContext);
+  console.log("db.size: ", state.dbAggregates.map.size); // 61
+  console.log(state);
+}
+
+function printExecContext(executionContext) {
+  let {
+    program: { relationTypes },
+    state: { dbAggregates },
+  } = executionContext;
+  function pp(ps) {
+    return ps
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([tag, ...terms]) => {
+        let ty = reductionType(relationTypes, tag);
+        if (ty === "bool") {
+          if (valEqual(weight(terms), _true)) {
+            return [tag].concat(core(terms).map(ppTerm)).join(" ");
+          } else {
+            return [tag, ...core(terms).map(ppTerm), "->", "false"].join(" ");
+          }
+        } else {
+          return [tag, ...core(terms).map(ppTerm), "->", ppTerm(weight(terms))].join(" ");
+        }
+      })
+      .join("\n");
+  }
+  console.log(pp(af(dbAggregates.entries()).map(([core, w]) => [...core, w])));
 }
 
 function printDb(state) {
   function pp(ps) {
     return ps
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([tag, ...terms]) => [tag].concat(terms.map(ppTerm)).join(" "))
+      .map(([tag, ...terms]) => {
+        if (tag === "asdf") {
+          console.log(">>>>>>>>>>>", terms);
+        }
+        return [tag].concat(terms.map(ppTerm)).join(" ");
+      })
       .join("\n");
   }
-  console.log(pp(af(state.dbAggregates.map.values()).map(([v, _]) => v)));
+  console.log(pp(af(state.dbAggregates.entries()).map(([core, w]) => [...core, w])));
 }
 
 function timeFn(fn) {
@@ -342,10 +319,19 @@ window.onload = () => loadRules(main);
 // [x]store correct state in branch node
 // [x]stable branch reference type
 // [x]iterate log of refs
+// [x]duplicate tuple bug
+// [kinda]assertion
+// [x]split bindings,
+// [x]negation, define tips
+// name node by binding
+// box [eq] method?
+// choose
+// GOAL
 // update function
-//   new code for ~
-//   choose
 // delete tuple in >>>
+// ! matching zero defect
+// ! immutable bindings
 // temporal pattern
 
 // query live db interface
+// save derivation traces for regression tests

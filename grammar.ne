@@ -83,10 +83,11 @@ event_expr -> identifier {% (d) => ({ tag: "literal", name: d[0]}) %}
 episode_expr -> relation {% (d) => [{ tag: "observation", pattern: d[0]}] %}
 episode_expr -> op pure_query cp _ "=>" _ op pure_query cp
   {% (d) => [{ tag: "modification", before: d[1], after: d[7] }] %}
-episode_expr -> "-(" _ pure_query cp
+episode_expr -> "-" _ pure_query
   {% (d) => [{tag: "retract", query: d[2] }] %}
-episode_expr -> "+(" _ pure_query cp
-  {% (d) => [{tag: "assert", tuples: d[2] }] %}
+# todo: rename
+#episode_expr -> "+(" _ pure_query cp {% (d) => [{tag: "assert", tuples: d[2] }] %}
+episode_expr -> "+" relation {% (d) => [{tag: "assert", tuple: d[1] }] %}
 episode_expr -> term __ "chooses" __ quantifier __ op pure_query cp
   {% (d) => [{ tag: "subquery", query: d[7], name: '?'},
              { tag: "choose", actor: d[0], quantifier: d[4], name: '?' }] %}
@@ -113,6 +114,7 @@ trigger -> "!" identifier  {% (d) => ({type: 'before', predicate: d[1]}) %}
 trigger -> identifier  {% (d) => ({type: 'during', predicate: d[0]}) %}
 trigger -> identifier "!"  {% (d) => ({type: 'after', predicate: d[0]}) %}
 rule_header -> "{" _ identifier _ "}" _ trigger ":" {% (d) => ({id: d[2], trigger: d[6] }) %}
+rule_header -> trigger ":" {% (d) => ({id: d[0].predicate, trigger: d[0] }) %}
 rule -> rule_header _ rule_body _ "." {% (d) => ({header: d[0], body: d[2] }) %}
 #rule -> "!" identifier rule_separator rule_body _ "." {% (d) => ({head: d[1], type: 'before', body: d[3] }) %}
 #rule -> identifier rule_separator rule_body _ "." {% (d) => ({head: d[0], type: 'during', body: d[2] }) %}

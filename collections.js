@@ -31,6 +31,10 @@ function forEach(arr, f) {
   return false;
 }
 
+function range(n) {
+  return [...Array(n).keys()];
+}
+
 function splitArray(arr) {
   assert(arr.length > 0);
   return [arr[0], arr.slice(1)];
@@ -53,6 +57,9 @@ class KeyedMap {
   get(k) {
     let m = this.map.get(this.key(k));
     return m ? m[1] : undefined;
+  }
+  contains(k) {
+    return this.map.has(this.key(k));
   }
   set(k, v) {
     this.map.set(this.key(k), [k, v]);
@@ -130,4 +137,14 @@ class DelayedMap {
     }
   }
 }
-export { ap, toTag, assert, splitArray, MonoidMap, ArrayMap, KeyedMap, DelayedMap };
+export {
+  ap,
+  toTag,
+  assert,
+  splitArray,
+  MonoidMap,
+  ArrayMap,
+  KeyedMap,
+  DelayedMap,
+  range,
+};

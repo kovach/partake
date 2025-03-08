@@ -17,7 +17,28 @@ import { assert, KeyedMap, ArrayMap } from "./collections.js";
 function tup(tag, values, weight) {
   return [tag].concat(weight ? values.concat([weight]) : values);
 }
-function evalQuery({ db, js }, query, context = [emptyBinding()]) {
+function reductionType(relationTypes, tag) {
+  return relationTypes[tag] || "bool";
+}
+
+function reductionOps(relationTypes, tag) {
+  function wrap(type, fn) {
+    return ({ value: a }, { value: b }) => type(fn(a, b));
+  }
+  let semirings = {
+    bool: { type: mkInt, add: wrap(mkInt, (a, b) => a || b), zero: mkInt(0) },
+    min: { type: mkInt, add: wrap(mkInt, Math.min), zero: mkInt(Infinity) },
+    max: { type: mkInt, add: wrap(mkInt, Math.max), zero: mkInt(-Infinity) },
+    num: { type: mkInt, add: wrap(mkInt, (a, b) => a + b), zero: mkInt(0) },
+    last: { type: mkBox, add: wrap(mkBox, (_a, b) => b), zero: mkBox(null) },
+  };
+  let ty = reductionType(relationTypes, tag);
+  assert(ty);
+  assert(ty in semirings);
+  return semirings[ty];
+}
+
+function evalQuery({ db, js, relationTypes }, query, context = [emptyBinding()]) {
   // redundant. done to ensure result does not contain any input context
   //if (query.length === 0) return context.map((c) => c.clone());
   if (query.length === 0) return context.map((c) => c.clone());
@@ -31,10 +52,21 @@ function evalQuery({ db, js }, query, context = [emptyBinding()]) {
         yield [tag, ...x];
       }
     } else {
-      for (let [tuple, _] of db.entries()) {
-        yield tuple;
+      for (let [core, weight] of db.entries()) {
+        yield [...core, weight];
       }
     }
+  }
+
+  function getOrInsertZero(tag, values) {
+    // weird format
+    let c = [tag, ...core(values)];
+    let w = weight(values); // w = zero
+    if (db.contains(c)) {
+      return [...c, db.get(c)];
+    }
+    db.set(c, w);
+    return [...c, w];
   }
 
   function* joinBindings(context, pattern) {
@@ -42,19 +74,19 @@ function evalQuery({ db, js }, query, context = [emptyBinding()]) {
     let ts = terms(pattern);
     for (let c of context) {
       let values = ts.map((t) => evalTerm(js, c, t));
-      // todo: handle negation specially
-      // if weight is 0 after eval, assert other values are also bound
-      //   getWeight, proceed
-      // otherwise, ...
-      //let zero = reductionType(tg).zero;
-      //if (valEqual(values[values.length - 1], zero)) {
-      //  for (let v of values) {
-      //    assert(!isVar(v), "negated pattern must not contain unbound variables");
-      //  }
-      //  let val = getOrInsertZero(tg, values);
-      //  if (valEqual(val, zero)) yield c.clone();
-      //} else
-      {
+      let zero = reductionOps(relationTypes, tg).zero;
+      if (valEqual(weight(values), zero)) {
+        // Negation case
+        for (let v of values) {
+          // todo: ideally want to warn here instead
+          // currently this line can be reached when we try to unify a new positive tuple against a negative pattern
+          //assert(!isVar(v), "negated pattern must not contain unbound variables");
+          if (isVar(v)) return;
+        }
+        let tuple = getOrInsertZero(tg, values);
+        if (valEqual(weight(tuple), zero)) yield extendBinding(c, tuple, values);
+      } else {
+        // Normal case
         for (let tuple of readDb(tg, c, values)) {
           if (tupleValid(tuple, tg, values)) {
             yield extendBinding(c, tuple, values);
@@ -99,7 +131,7 @@ function key(tuple) {
   return JSON.stringify(tuple);
 }
 function singletonDb(tuple) {
-  return new KeyedMap(key, [[tuple, true]]);
+  return new KeyedMap(key, [[core(tuple), weight(tuple)]]);
 }
 
 function mkProgram(rules, js, relationTypes) {
@@ -175,12 +207,13 @@ let mod = {
 /* Main logic: iteratively derive and aggregate implications of `program.rules`.
  * mutates state
  */
-function seminaive(program, state) {
+function seminaive(executionContext) {
+  let { program, state } = executionContext;
   let { rules, relationTypes, js } = program;
-  let { dependencies, dbAtoms, dbAggregates, addWorklist, delWorklist, init } = state;
+  let { dependencies, dbAtoms, dbAggregates, init } = state;
   // !!! TODO
   //let dependencies = new ArrayMap(new KeyedMap(key));
-  let debug = false;
+  let debug = 0;
 
   if (init) {
     // Rules with empty LHS
@@ -188,29 +221,27 @@ function seminaive(program, state) {
     state.init = false;
   }
   // Rules with LHS
-  while (addWorklist.length + delWorklist.length > 0) {
-    if (delWorklist.length > 0) {
-      let tuple = delWorklist.pop();
-      log("pop del tuple: ", ppTuple(tuple));
+  while (state.addWorklist.length + state.delWorklist.length > 0) {
+    if (state.delWorklist.length > 0) {
+      let tuple = state.delWorklist.pop();
+      log("pop del tuple: ", ppTuple(tuple), tuple);
       retractTuple(tuple);
     } else {
-      let tuple = addWorklist.pop();
-      log("pop cadd tuple: ", ppTuple(tuple));
+      let tuple = state.addWorklist.pop();
+      log("pop add tuple: ", ppTuple(tuple), tuple);
       assertTuple(tuple);
     }
   }
-  state.addWorklist = addWorklist;
-  //throw "";
   return null;
 
   /* Definitions */
 
   function log(...args) {
-    if (debug) console.log(...args);
+    if (debug > 1) console.log(...args);
   }
 
   function log2(...args) {
-    if (true) console.log(...args);
+    if (debug > 0) console.log(...args);
   }
 
   function assertEmptyTuple() {
@@ -224,15 +255,23 @@ function seminaive(program, state) {
     for (let rule of rules) {
       for (let { spot, rest } of splitRule(rule.body, tag(tuple))) {
         // bind new tuple
-        let context = evalQuery({ db: singletonDb(tuple), js }, [spot], [emptyBinding()]);
+        let context = evalQuery(
+          { db: singletonDb(tuple), js, relationTypes },
+          [spot],
+          [emptyBinding()]
+        );
         // solve remaining query
-        for (let binding of evalQuery({ db: dbAggregates, js }, rest, context)) {
+        for (let binding of evalQuery(
+          { db: dbAggregates, js, relationTypes },
+          rest,
+          context
+        )) {
           assertBinding({ rule, binding }, binding.notes.get("used"));
         }
       }
     }
     // insert tuple
-    dbAggregates.set(tuple, true);
+    dbAggregates.set(core(tuple), weight(tuple));
   }
 
   function assertBinding(x, used) {
@@ -279,9 +318,10 @@ function seminaive(program, state) {
     );
     let newWeighted = getWeight(core(atom));
     // todo: batching
-    if (!tupleEqual(weight(oldWeighted), weight(newWeighted))) {
+    if (!valEqual(weight(oldWeighted), weight(newWeighted))) {
+      //if (!tupleEqual(weight(oldWeighted), weight(newWeighted))) {
       queueTupleDel(oldWeighted);
-      let { zero } = reductionType(tag(atom));
+      let { zero } = reductionOps(relationTypes, tag(atom));
       if (!valEqual(weight(newWeighted), zero)) queueTupleAdd(newWeighted);
     } else {
       log("no change: ", oldWeighted, newWeighted);
@@ -289,7 +329,7 @@ function seminaive(program, state) {
   }
 
   function getWeight(core) {
-    let { zero, add } = reductionType(tag(core));
+    let { zero, add } = reductionOps(relationTypes, tag(core));
     let values = dbAtoms.get(core);
     let weight = values.reduce((acc, { weight }) => add(acc, weight), zero);
     if (values.length > 2) {
@@ -298,32 +338,16 @@ function seminaive(program, state) {
     }
     return core.concat([weight]);
   }
-  function reductionType(tag) {
-    function wrap(type, fn) {
-      return ({ value: a }, { value: b }) => type(fn(a, b));
-    }
-    let semirings = {
-      bool: { type: mkInt, add: wrap(mkInt, (a, b) => a || b), zero: mkInt(0) },
-      min: { type: mkInt, add: wrap(mkInt, Math.min), zero: mkInt(Infinity) },
-      max: { type: mkInt, add: wrap(mkInt, Math.max), zero: mkInt(-Infinity) },
-      num: { type: mkInt, add: wrap(mkInt, (a, b) => a + b), zero: mkInt(0) },
-      last: { type: mkBox, add: wrap(mkBox, (_a, b) => b), zero: mkBox(null) },
-    };
-    let ty = relationTypes[tag] || "bool";
-    assert(ty);
-    assert(ty in semirings);
-    return semirings[ty];
-  }
   // actually makes worklist into a stack
   function queueTupleAdd(tuple) {
     log("queueTupleAdd: ", ppTuple(tuple));
     //worklist = [{ tuple, mod: mod.add }].concat(worklist);
-    addWorklist.push(tuple);
+    state.addWorklist.push(tuple);
   }
   function queueTupleDel(tuple) {
     log("queueTupleDel: ", ppTuple(tuple));
     //worklist = [{ tuple, mod: mod.add }].concat(worklist);
-    delWorklist.push(tuple);
+    state.delWorklist.push(tuple);
   }
   function bindingEq(b1, b2) {
     return b1.eq(b2, valEqual);
@@ -352,8 +376,8 @@ function seminaive(program, state) {
       retractBinding(ruleBinding);
     }
     dependencies.reset(tuple);
-    addWorklist = addWorklist.filter((t) => !tupleEqual(t, tuple));
-    dbAggregates.delete(tuple);
+    state.addWorklist = state.addWorklist.filter((t) => !tupleEqual(t, tuple));
+    dbAggregates.delete(core(tuple));
   }
   function retractBinding(x) {
     changeBinding(x, "del");
@@ -392,6 +416,7 @@ function substitute(js, binding, terms, allowFresh = false) {
 
 // External interface to add/remove boolean state tuples
 function addTuple(state, tuple) {
+  //console.log("extern add: ", tuple);
   tuple = tuple.concat(mkInt(1));
   state.addWorklist.push(tuple);
 }
@@ -400,4 +425,16 @@ function delTuple(state, tuple) {
   state.delWorklist.push(tuple);
 }
 
-export { fixRules, emptyState, mkProgram, seminaive, addTuple, delTuple };
+export {
+  fixRules,
+  emptyState,
+  mkProgram,
+  evalQuery,
+  seminaive,
+  substitute,
+  addTuple,
+  delTuple,
+  reductionType,
+  core,
+  weight,
+};
