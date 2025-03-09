@@ -28,12 +28,19 @@ arg_list -> term (_ "," _ arg_list):?
 fn_call -> "@" identifier _ "(" _ arg_list _ ")"
   {% (d) => ({tag :'call', fn: d[1], args: d[5]}) %}
 
+# {Var: 'foo, P: 22}
+binding -> var _ ":" _ term {% (d) => [d[0], d[4]] %}
+binding_list -> null {% () => [] %}
+binding_list -> binding (comma binding_list):? {% (d) => [d[0], ...(d[1] ? d[1][1] : [])] %}
+binding_expr -> "{" _ binding_list _ "}" {% (d) => ({tag: 'preBind', value: d[2]}) %}
+
 term -> var {% (d) => ({tag: 'var', value: d[0]}) %}
 term -> [0-9]:+ {% (d) => ({tag: 'int', value: parseInt(d[0].join(""))}) %}
-term -> fn_call {% id %}
 term -> "'" identifier {% (d) => ({tag: 'sym', value: d[1]}) %}
 term -> term "." identifier {% (d) => ({tag: 'dot', left: d[0], right: d[2]}) %}
 term -> "." predicate {% (d) => ({tag: 'dot', left: null, right: d[1]}) %}
+term -> fn_call {% id %}
+term -> binding_expr {% id %}
 
 # pred2 x y @fn(x)
 relation -> predicate (__ term):*               {% (d) => ({tag: d[0], terms: d[1].map(t => t[1]).concat([{tag: 'int', value: 1}])}) %} relation -> predicate (__ term):* _ "->" _ term {% (d) => ({tag: d[0], terms: d[1].map(t => t[1]).concat([d[5]])}) %}

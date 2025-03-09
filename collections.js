@@ -34,6 +34,21 @@ function forEach(arr, f) {
 function range(n) {
   return [...Array(n).keys()];
 }
+function unzip(arr) {
+  let as = [];
+  let bs = [];
+  for (let [a, b] of arr) {
+    as.push(a);
+    bs.push(b);
+  }
+  return [as, bs];
+}
+
+function zip(as, bs) {
+  let result = [];
+  for (let i = 0; i < Math.min(as.length, bs.length); i++) result.push([as[i], bs[i]]);
+  return result;
+}
 
 function splitArray(arr) {
   assert(arr.length > 0);
@@ -147,4 +162,6 @@ export {
   KeyedMap,
   DelayedMap,
   range,
+  unzip,
+  zip,
 };

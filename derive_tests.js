@@ -88,6 +88,9 @@ node I', body I' B' S', label I' L, succeeds I I', contains P I'.
 
 # Diagnostic
 body I B S, label I L --- remaining-steps I L @length(S).
+
+tip I, body I B _, @le {P: 'P} B Out --- bbbb I Out.
+tip I, body I B _, @le {P: 'Q} B Out --- bbbb I Out.
 `;
 
 let branchCounters = new MonoidMap(
@@ -172,6 +175,8 @@ function mainTest(stories) {
       return a.value < b.value;
     }),
     le: tor("le", (a, b) => {
+      if (a.tag === "bind") return a.value.le(b.value);
+      assert(["int", "sym"].includes(a.tag));
       return a.value <= b.value;
     }),
     length: (a) => mkInt(a.value.length),
@@ -182,8 +187,9 @@ function mainTest(stories) {
       return body.length > 0;
     }),
     unify: (a, b) => {
-      let out = a.value.unify(b.value, valEqual);
+      let out = a.value.unify(b.value);
       if (out) {
+        //console.log("UNIFY: ", ppTerm(out));
         return [[a, b, mkBind(out), _true]];
       }
       return [];
@@ -220,7 +226,7 @@ function mainTest(stories) {
 
   /* finish */
   printState(executionContext);
-  console.log("db.size: ", state.dbAggregates.map.size); // 117
+  console.log("db.size: ", state.dbAggregates.map.size); // 119
   console.log(state);
 }
 
@@ -280,7 +286,7 @@ window.onload = () => loadRules(main);
 [x]split bindings,
 [x]negation, define tips
 [x]partial guard rule
-name node by binding
+[x]name node by binding
 choose
 GOAL
 spawn episode with local tuple
@@ -291,6 +297,9 @@ list long script examples
 temporal pattern
 ? delete tuple in >>>
 
+! dot expand derive rules
+revive old unit tests
+? enrich patterns with relationType/js content
 query live db interface
 save derivation traces for regression tests
 */

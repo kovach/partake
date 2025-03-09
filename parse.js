@@ -1,5 +1,6 @@
 import grammar from "./grammar.js";
-import { ArrayMap, assert } from "./collections.js";
+import { ArrayMap, assert, unzip, zip } from "./collections.js";
+import { Binding, mkBind } from "./join.js";
 
 function parseNonterminal(nt, text) {
   let assertAmbiguity = true;
@@ -13,8 +14,14 @@ function parseNonterminal(nt, text) {
   return result[0];
 }
 
+// todo: rename
 function dotExpandTerm(t) {
   switch (t.tag) {
+    case "preBind": {
+      let [ks, vs] = unzip(t.value);
+      let { prefix, terms } = dotExpandTerms(vs);
+      return { prefix, term: mkBind(new Binding(zip(ks, terms))) };
+    }
     case "var":
     case "sym":
     case "int":
@@ -187,4 +194,4 @@ function parseProgram(text) {
   return program;
 }
 
-export { parseNonterminal, parseProgram };
+export { dotExpandQuery, parseNonterminal, parseProgram };

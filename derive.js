@@ -13,6 +13,7 @@ import {
   ppTerm,
 } from "./join.js";
 import { assert, range, KeyedMap, ArrayMap } from "./collections.js";
+import { dotExpandQuery } from "./parse.js";
 
 function tup(tag, values, weight) {
   return [tag].concat(weight ? values.concat([weight]) : values);
@@ -179,7 +180,10 @@ function ppTuple(tuple) {
 
 function fixRules(rules) {
   function flatten(q) {
-    return q.map(({ tag, terms }) => [tag].concat(terms));
+    let { prefix, query } = dotExpandQuery(q);
+    q = [...prefix, ...query];
+    q = q.map(({ tag, terms }) => [tag].concat(terms));
+    return q;
   }
   return rules.map(({ head, body, type }) => ({
     body: flatten(body),

@@ -143,6 +143,8 @@ function evalTerm(js, binding, term) {
     if (term.tag === "call") {
       let args = term.args.map((v) => evalTerm(js, binding, v));
       return js[term.fn](...args);
+    } else if (term.tag === "bind") {
+      return term; // todo: handle variables. change representation?
     } else {
       assert(term.tag === "int" || term.tag === "sym");
       return term;
@@ -195,16 +197,28 @@ class Binding {
     return m;
   }
 
+  // all keys in this appear with the same value in b
+  // todo: allow vars in b (unifyLe)?
+  le(b) {
+    for (let [key, val] of this.substitution.entries()) {
+      if (!b.has(key) || !valEqual(b.get(key), val)) return false;
+    }
+    return true;
+  }
   unify(b) {
     let values = [];
     for (let [key, val] of this.substitution.entries()) {
+      if (b.has(key)) {
+        console.log("both: ", key);
+      }
       if (b.has(key) && !valEqual(b.get(key), val)) return false;
       values.push([key, val]);
     }
     for (let [key, val] of b.substitution.entries()) {
       values.push([key, val]);
     }
-    return Binding(values);
+    console.log("done");
+    return new Binding(values);
   }
   set(key, val) {
     this.substitution.set(key, val);
@@ -227,49 +241,6 @@ function emptyBinding() {
   return new Binding();
 }
 
-/*
-// todo profile
-function extendBinding(c, tag, tuple, values, modifiers) {
-  assert(Array.isArray(values));
-  for (let index = 0; index < values.length; index++) {
-    let term = values[index];
-    if (isLiteral(term) && !valEqual(term, tuple[index])) return false;
-  }
-  c = c.clone();
-  for (let index = 0; index < values.length; index++) {
-    let term = values[index];
-    if (isVar(term)) c.set(term.value, tuple[index]);
-  }
-  let fact = [tag, tuple];
-  modifiers.forEach((mod) => {
-    c.notes.add(mod, fact);
-  });
-  c.notes.add("used", fact);
-  return c;
-}
-function* joinBindings(js, context, { pattern: { tag, terms, modifiers }, tuples }) {
-  for (let c of context) {
-    let values = terms.map((t) => evalTerm(js, c, t));
-    for (let tuple of tuples) {
-      let newC = extendBinding(c, tag, tuple, values, modifiers || []);
-      if (newC !== false) yield newC;
-    }
-  }
-}
-
-function evalQuery(db, js, query, context = [emptyBinding()]) {
-  // redundant. done to ensure result does not contain any input context
-  if (query.length === 0) return context.map((c) => c.clone());
-
-  return query
-    .map((pattern) => {
-      assert(pattern.tag && pattern.terms);
-      return { pattern, tuples: iterRelTuples(db, pattern.tag) };
-    })
-    .reduce((context, b) => joinBindings(js, context, b), context);
-}
-*/
-
 function valEqual(a, b) {
   if (a.tag !== b.tag) return false;
   assert(a.tag !== "var" && a.tag !== "call");
@@ -282,7 +253,7 @@ function valEqual(a, b) {
       //console.log(JSON.stringify(a.value), JSON.stringify(b.value));
       return JSON.stringify(a.value) === JSON.stringify(b.value); // TODO
     case "bind":
-      return a.value.eq(b.value.eq, valEqual);
+      return a.value.eq(b.value, valEqual);
     default:
       throw "";
   }
@@ -421,4 +392,5 @@ export {
   dbEq,
   extendBinding,
   ppTuples,
+  Binding,
 };
