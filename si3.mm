@@ -1,4 +1,4 @@
-{start} game: ~turn.
+game: ~turn.
 
 {setup} game:
   +player 'P,

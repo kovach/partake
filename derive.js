@@ -12,7 +12,7 @@ import {
   mkBox,
   ppTerm,
 } from "./join.js";
-import { assert, KeyedMap, ArrayMap } from "./collections.js";
+import { assert, range, KeyedMap, ArrayMap } from "./collections.js";
 
 function tup(tag, values, weight) {
   return [tag].concat(weight ? values.concat([weight]) : values);
@@ -390,7 +390,14 @@ function seminaive(executionContext) {
     function removeAt(array, i) {
       return array.filter((_, j) => j !== i);
     }
-    for (let i = 0; i < body.length; i++) {
+    // if a query contains a `!predicate ...` pattern, then we *only* produce spots at
+    // any patterns starting with `!`
+    let hasBang = (pattern) => pattern[0][0] === "!";
+    let indices = range(body.length);
+    if (body.some(hasBang)) indices = indices.filter((i) => hasBang(body[i]));
+    let removeBang = (p) => (hasBang(p) ? [p[0].slice(1), ...p.slice(1)] : p);
+    body = body.map(removeBang);
+    for (let i of indices) {
       if (tag(body[i]) === t) yield { spot: body[i], rest: removeAt(body, i) };
     }
   }

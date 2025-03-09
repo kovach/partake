@@ -50,58 +50,50 @@ let single =
     tr([fn(...args)]);
 
 const mainProgram = `
-delay e -> a, next-delay -> b, @lt a b --- finished e.
-
 node _ id --- node id.
 node '_branch id --- is-branch id.
-
-node '_branch id, body id -> body, @nonemptyBody body
---------------------------------------------
-unfinished id.
-
-node x, reach x y, unfinished y --- unfinished x.
-
-node id --- delay id -> 0.
-before x y, delay x -> a --- delay y -> @add(a,1).
-unfinished x, delay x -> val --- next-delay -> val.
-
-is-branch id, delay id -> v, next-delay -> v --- active id.
 
 node id --- reach id id.
 then _ X, reach X Z, contains Z Y --- reach X Y.
 then X _, reach X Z, contains Z Y --- reach X Y.
-
 then A B, reach A X, reach B Y --- before X Y.
+
+succeeds I I' --- old I.
+node I, old I -> 0 --- tip I.
+
+# TODO needed?
+#delay e -> a, next-delay -> b, @lt a b --- finished e.
+#node id --- delay id -> 0.
+#before x y, delay x -> a --- delay y -> @add(a,1).
+#unfinished x, delay x -> val --- next-delay -> val.
+#is-branch id, delay id -> v, next-delay -> v --- active id.
+#node '_branch id, body id -> body, @nonemptyBody body
+#--- unfinished id.
+#node x, reach x y, unfinished y --- unfinished x.
 
 ############## Updates ##############
 
 ######### Rule Activation
-# TODO:
-#delete: forceSteps L -> n, label I L, steps I -> m, @le m n, body I -> B, @updateBranch I B B'
-#>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-#body I -> B', steps I -> 1.
-
+# Todo
 #node tag id _, rule name tag 'before body, @initBranch name body x
 #>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 #node '_branch new parent, body new -> x, then new id.
-#node tag id _, finished id, rule name tag 'after body, @initBranch name body x
+#finished id, node tag id, rule name tag 'after body, @initBranch name body x
 #>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 #node '_branch new parent, body new -> x, then id new.
 
-node tag id, rule name tag 'during body, @initBranch name body L B
+node tag I, rule name tag 'during body, @initBranch name body L B
 >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-node '_branch New, contains id New, body New B, label New L.
+node '_branch I', contains I I', body I' B, label I' L.
 
 ######### Branch Update
-force L x, label I L, contains P I, body I B, @updateBranch I B B'
->>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-body I' B', label I' L', succ I I', contains P I'.
+!force L x, label I L, tip I, contains P I,
+body I B, @updateBranch I B B'
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+node I', body I' B', label I' L, succeeds I I', contains P I'.
 
+# Diagnostic
 body I B, label I L --- remaining-steps I L @length(@story(B)).
-
-succ I I' --- old I.
-node I, old I -> 0 --- tip I.
-
 `;
 
 let branchCounters = new MonoidMap(
@@ -123,7 +115,7 @@ function loadRuleTuples(state, stories) {
   for (let [type, ruleGroup] of Object.entries(stories)) {
     for (let [trigger, rules] of ruleGroup.map.entries()) {
       for (let { id, body } of rules) {
-        console.log("rule: ", id, type, trigger, body);
+        //console.log("rule: ", id, type, trigger, body);
         addTuple(state, ["rule", mkSym(id), mkSym(trigger), mkSym(type), mkBox(body)]);
       }
     }
@@ -172,14 +164,9 @@ function mainTest(stories) {
   let relTypes = {
     delay: "max",
     "next-delay": "min",
-    //body: "last",
     steps: "num",
     forceSteps: "num",
   };
-  function updateBranch_(...args) {
-    return updateBranch(executionContext, ...args);
-  }
-
   let derivations = parseRules(mainProgram);
 
   let js = {
@@ -187,7 +174,7 @@ function mainTest(stories) {
       console.log("!!!!!!!!!! ", ...args);
     },
     initBranch: single(initBranch),
-    updateBranch: updateBranch_,
+    updateBranch: (...args) => updateBranch(executionContext, ...args),
     add: ({ value: a }, { value: b }) => mkInt(a + b),
     eq: tor("eq", (a, b) => {
       return valEqual(a, b);
@@ -213,7 +200,7 @@ function mainTest(stories) {
     () =>
       addTuple(state, [...args]);
   let force = (x) => tup("force", mkSym(x), freshId());
-  let forcen = (n, x) => range(n).map((i) => tup("force", mkSym(x), freshId()));
+  let forcen = (n, x) => range(n).map((_i) => force(x));
 
   /* setup */
   let executionContext = setupState(derivations, js, relTypes);
@@ -224,28 +211,32 @@ function mainTest(stories) {
   /* execute log of actions */
   // prettier-ignore
   let thelog = [
-    ...forcen(1, "start_1"), // done: 1
-    ...forcen(1, "setup_1"), // done: 2
+    ...forcen(1, "game_1"), // done: 1
+    ...forcen(2, "setup_1"), // done: 2
     ...forcen(0, "turn_1"),  // done: 6
     ...forcen(0, 'spirit-phase_1'), // 5
   ];
+  timeFn(() => seminaive(executionContext));
   for (let t of thelog) {
     t();
     timeFn(() => seminaive(executionContext));
   }
-  printExecContext(executionContext);
-  console.log("db.size: ", state.dbAggregates.map.size); // 61
+
+  /* finish */
+  printState(executionContext);
+  console.log("db.size: ", state.dbAggregates.map.size); // 74
   console.log(state);
 }
 
-function printExecContext(executionContext) {
+function printState(executionContext) {
+  let tupleCmp = (a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b));
   let {
     program: { relationTypes },
-    state: { dbAggregates },
+    state: { dbAggregates: db },
   } = executionContext;
   function pp(ps) {
     return ps
-      .sort(([a], [b]) => a.localeCompare(b))
+      .sort(tupleCmp)
       .map(([tag, ...terms]) => {
         let ty = reductionType(relationTypes, tag);
         if (ty === "bool") {
@@ -260,22 +251,7 @@ function printExecContext(executionContext) {
       })
       .join("\n");
   }
-  console.log(pp(af(dbAggregates.entries()).map(([core, w]) => [...core, w])));
-}
-
-function printDb(state) {
-  function pp(ps) {
-    return ps
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([tag, ...terms]) => {
-        if (tag === "asdf") {
-          console.log(">>>>>>>>>>>", terms);
-        }
-        return [tag].concat(terms.map(ppTerm)).join(" ");
-      })
-      .join("\n");
-  }
-  console.log(pp(af(state.dbAggregates.entries()).map(([core, w]) => [...core, w])));
+  console.log(pp(af(db.entries()).map(([core, w]) => [...core, w])));
 }
 
 function timeFn(fn) {
@@ -291,14 +267,6 @@ function setupState(derivations, js, relationTypes) {
   return { state: emptyState(), program: mkProgram(derivations, js, relationTypes) };
 }
 
-function runTests() {
-  let unitTests = new Map([unitTest2, unitTest3, unitTest4]);
-  for (let [key, val] of unitTests.entries()) {
-    console.log(key, val());
-  }
-}
-export { runTests };
-
 function loadRules(fn) {
   fetch("si3.mm")
     .then((res) => res.text())
@@ -306,32 +274,27 @@ function loadRules(fn) {
 }
 
 function main(stories) {
-  //runTests();
   mainTest(stories);
 }
 
 window.onload = () => loadRules(main);
 
-// [x]rule invocation code
-// [x]add rule to advance branch
-// [x]parse and load ruleset
-// [x]load rules as tuples
-// [x]store correct state in branch node
-// [x]stable branch reference type
-// [x]iterate log of refs
-// [x]duplicate tuple bug
-// [kinda]assertion
-// [x]split bindings,
-// [x]negation, define tips
-// name node by binding
-// box [eq] method?
-// choose
-// GOAL
-// update function
-// delete tuple in >>>
-// ! matching zero defect
-// ! immutable bindings
-// temporal pattern
+/*
+! [kinda] assertion
+[x]split bindings,
+[x]negation, define tips
+[x]partial guard rule
+name node by binding
+choose
+GOAL
+spawn episode with local tuple
+box [eq] method?
+first long script
+list long script examples
+! immutable bindings
+temporal pattern
+? delete tuple in >>>
 
-// query live db interface
-// save derivation traces for regression tests
+query live db interface
+save derivation traces for regression tests
+*/

@@ -14,9 +14,9 @@ identifier -> [a-zA-Z_] [a-zA-Z0-9'_-]:*  {% (d) => d[0] + d[1].join("") %}
 # _var, Var
 var -> identifier {% id %}
 
+# if a >>>-rule contains `!predicate`s, only those can trigger updates
+predicate -> "!" identifier {% (d) => ("!"+d[1]) %}
 predicate -> identifier {% id %}
-# todo
-predicate -> identifier "/" identifier {% (d) => d[0] + "/" + d[2] %}
 
 # foo(a, b)
 arg_list -> null {% (d) => ([]) %}
@@ -36,8 +36,7 @@ term -> term "." identifier {% (d) => ({tag: 'dot', left: d[0], right: d[2]}) %}
 term -> "." predicate {% (d) => ({tag: 'dot', left: null, right: d[1]}) %}
 
 # pred2 x y @fn(x)
-relation -> predicate (__ term):*               {% (d) => ({tag: d[0], terms: d[1].map(t => t[1]).concat([{tag: 'int', value: 1}])}) %}
-relation -> predicate (__ term):* _ "->" _ term {% (d) => ({tag: d[0], terms: d[1].map(t => t[1]).concat([d[5]])}) %}
+relation -> predicate (__ term):*               {% (d) => ({tag: d[0], terms: d[1].map(t => t[1]).concat([{tag: 'int', value: 1}])}) %} relation -> predicate (__ term):* _ "->" _ term {% (d) => ({tag: d[0], terms: d[1].map(t => t[1]).concat([d[5]])}) %}
 relation -> "@" predicate (__ term):*           {% (d) => ({tag: "@"+d[1], terms: d[2].map(t => t[1]).concat([{tag: 'int', value: 1}])}) %}
 
 # p2 x y, p1 z, foo
