@@ -14,16 +14,13 @@ import {
 } from "./join.js";
 import {
   fixRules,
-  mkProgram,
-  emptyState,
   evalQuery,
   substitute,
-  seminaive,
   addTuple,
   delTuple,
   core,
   weight,
-  reductionType,
+  mkSeminaive,
 } from "./derive.js";
 
 function parseRules(text) {
@@ -86,11 +83,13 @@ body I B S, @updateBranch I B S B' S'
 >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 node I', body I' B' S', label I' L, succeeds I I', contains P I'.
 
+!force L BindPattern x, label I L, tip I, contains P I,
+body I B S, @le BindPattern B, @updateBranch I B S B' S'
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+node I', body I' B' S', label I' L, succeeds I I', contains P I'.
+
 # Diagnostic
 body I B S, label I L --- remaining-steps I L @length(S).
-
-tip I, body I B _, @le {P: 'P} B Out --- bbbb I Out.
-tip I, body I B _, @le {P: 'Q} B Out --- bbbb I Out.
 `;
 
 let branchCounters = new MonoidMap(
@@ -115,11 +114,9 @@ function loadRuleTuples(state, stories) {
 }
 
 let _true = mkInt(1);
-let updateBranch = (executionContext, id, bind, story) => {
-  let {
-    state,
-    program: { js, relationTypes },
-  } = executionContext;
+let updateBranch = (ec, id, bind, story) => {
+  let state = ec.getState();
+  let defs = ec.defs;
   let binding = bind.value;
   let body = story.value;
   console.log("!!!!", id, binding, body);
@@ -135,7 +132,7 @@ let updateBranch = (executionContext, id, bind, story) => {
     case "observation": {
       let pattern = [op.pattern.tag].concat(op.pattern.terms);
       let bindings = af(
-        evalQuery({ db: state.dbAggregates, js, relationTypes }, [pattern], [binding])
+        evalQuery({ db: state.dbAggregates, ...defs }, [pattern], [binding])
       );
       return bindings.map(mk);
     }
@@ -143,7 +140,7 @@ let updateBranch = (executionContext, id, bind, story) => {
     case "assert": {
       let pattern = core([op.tuple.tag].concat(op.tuple.terms));
       binding = binding.clone();
-      let tuple = substitute(js, binding, pattern, true);
+      let tuple = substitute(defs.js, binding, pattern, true);
       addTuple(state, tuple);
       return [mk(binding)];
     }
@@ -166,7 +163,7 @@ function mainTest(stories) {
       console.log("!!!!!!!!!! ", ...args);
     },
     initBranch: single(initBranch),
-    updateBranch: (...args) => updateBranch(executionContext, ...args),
+    updateBranch: (...args) => updateBranch(ec, ...args),
     add: ({ value: a }, { value: b }) => mkInt(a + b),
     eq: tor("eq", (a, b) => {
       return valEqual(a, b);
@@ -203,10 +200,13 @@ function mainTest(stories) {
       addTuple(state, [...args]);
   let force = (x) => tup("force", mkSym(x), freshId());
   let forcen = (n, x) => range(n).map((_i) => force(x));
+  let fn = (n, x) => range(n).map((_i) => ec.addRules(parseRules(x)));
 
   /* setup */
-  let executionContext = setupState(derivations, js, relTypes);
-  let { state } = executionContext;
+  let ec = mkSeminaive(derivations, js, relTypes);
+  //let executionContext = setupState(derivations, js, relTypes);
+  ec.init();
+  let state = ec.getState();
   loadRuleTuples(state, stories);
   mkNode(state, s`game`);
 
@@ -217,43 +217,19 @@ function mainTest(stories) {
     ...forcen(2, "setup_1"), // done: 2
     ...forcen(1, "turn_1"),  // done: 6
     ...forcen(1, 'spirit-phase_1'), // 5
+    () => fn(1," >>> force 'spirit-phase_1 {P: 'P} _."),
+    () => fn(1," >>> force 'spirit-phase_1 {P: 'Q} _."),
   ];
-  timeFn(() => seminaive(executionContext));
+  timeFn(() => ec.solve());
   for (let t of thelog) {
     t();
-    timeFn(() => seminaive(executionContext));
+    timeFn(() => ec.solve());
   }
 
   /* finish */
-  printState(executionContext);
-  console.log("db.size: ", state.dbAggregates.map.size); // 119
+  ec.print();
+  console.log("db.size: ", state.dbAggregates.map.size); // 137
   console.log(state);
-}
-
-function printState(executionContext) {
-  let tupleCmp = (a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b));
-  let {
-    program: { relationTypes },
-    state: { dbAggregates: db },
-  } = executionContext;
-  function pp(ps) {
-    return ps
-      .sort(tupleCmp)
-      .map(([tag, ...terms]) => {
-        let ty = reductionType(relationTypes, tag);
-        if (ty === "bool") {
-          if (valEqual(weight(terms), _true)) {
-            return [tag].concat(core(terms).map(ppTerm)).join(" ");
-          } else {
-            return [tag, ...core(terms).map(ppTerm), "->", "false"].join(" ");
-          }
-        } else {
-          return [tag, ...core(terms).map(ppTerm), "->", ppTerm(weight(terms))].join(" ");
-        }
-      })
-      .join("\n");
-  }
-  console.log(pp(af(db.entries()).map(([core, w]) => [...core, w])));
 }
 
 function timeFn(fn) {
@@ -263,10 +239,6 @@ function timeFn(fn) {
   let ms = t1 - t0;
   console.log("time: ", ms);
   return ms;
-}
-
-function setupState(derivations, js, relationTypes) {
-  return { state: emptyState(), program: mkProgram(derivations, js, relationTypes) };
 }
 
 function loadRules(fn) {
@@ -287,7 +259,9 @@ window.onload = () => loadRules(main);
 [x]negation, define tips
 [x]partial guard rule
 [x]name node by binding
-choose
+[x] force by binding
+eval choices
+decide by binding
 GOAL
 spawn episode with local tuple
 box [eq] method?

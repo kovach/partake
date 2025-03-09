@@ -1,5 +1,6 @@
 // TODO: match zero
 import {
+  af,
   emptyBinding,
   evalTerm,
   uniqueInt,
@@ -14,6 +15,8 @@ import {
 } from "./join.js";
 import { assert, range, KeyedMap, ArrayMap } from "./collections.js";
 import { dotExpandQuery } from "./parse.js";
+
+let _true = mkInt(1);
 
 function tup(tag, values, weight) {
   return [tag].concat(weight ? values.concat([weight]) : values);
@@ -41,7 +44,6 @@ function reductionOps(relationTypes, tag) {
 
 function evalQuery({ db, js, relationTypes }, query, context = [emptyBinding()]) {
   // redundant. done to ensure result does not contain any input context
-  //if (query.length === 0) return context.map((c) => c.clone());
   if (query.length === 0) return context.map((c) => c.clone());
 
   return query.reduce(joinBindings, context);
@@ -135,14 +137,6 @@ function singletonDb(tuple) {
   return new KeyedMap(key, [[core(tuple), weight(tuple)]]);
 }
 
-function mkProgram(rules, js, relationTypes) {
-  return {
-    rules,
-    js,
-    relationTypes,
-  };
-}
-
 /* Datalog evaluation state:
  *   dbAtoms: maps (tuple -> {(binding, weight)}),
  *   dbAggregates: maps (tuple -> weight)
@@ -208,35 +202,84 @@ let mod = {
   },
 };
 
+function dbTuples(db) {
+  return af(db.entries()).map(([core, weight]) => [...core, weight]);
+}
+
 /* Main logic: iteratively derive and aggregate implications of `program.rules`.
  * mutates state
  */
-function seminaive(executionContext) {
-  let { program, state } = executionContext;
-  let { rules, relationTypes, js } = program;
+function mkSeminaive(r, js, relationTypes) {
+  let rules = [...r];
+  let state = emptyState();
   let { dependencies, dbAtoms, dbAggregates, init } = state;
-  // !!! TODO
-  //let dependencies = new ArrayMap(new KeyedMap(key));
   let debug = 0;
 
-  if (init) {
-    // Rules with empty LHS
-    assertEmptyTuple();
-    state.init = false;
-  }
-  // Rules with LHS
-  while (state.addWorklist.length + state.delWorklist.length > 0) {
-    if (state.delWorklist.length > 0) {
-      let tuple = state.delWorklist.pop();
-      log("pop del tuple: ", ppTuple(tuple), tuple);
-      retractTuple(tuple);
-    } else {
-      let tuple = state.addWorklist.pop();
-      log("pop add tuple: ", ppTuple(tuple), tuple);
-      assertTuple(tuple);
+  let obj = {};
+  obj.defs = { js, relationTypes };
+  obj.init = () => {
+    assert(init, "call init once (todo fix)");
+    if (init) {
+      // Rules with empty LHS
+      assertEmptyTuple();
+      state.init = false;
     }
-  }
-  return null;
+  };
+  obj.solve = () => {
+    // Rules with LHS
+    while (state.addWorklist.length + state.delWorklist.length > 0) {
+      if (state.delWorklist.length > 0) {
+        let tuple = state.delWorklist.pop();
+        log("pop del tuple: ", ppTuple(tuple), tuple);
+        retractTuple(tuple);
+      } else {
+        let tuple = state.addWorklist.pop();
+        log("pop add tuple: ", ppTuple(tuple), tuple);
+        assertTuple(tuple);
+      }
+    }
+    return null;
+  };
+
+  obj.addRules = (rs) => {
+    // find all result bindings from just new rule; no fixpoint
+    assertEmptyTuple(rs);
+    for (let tuple of dbTuples(dbAggregates)) {
+      assertTuple(tuple, rs);
+    }
+    // add rule and solve
+    rs.forEach((r) => rules.push(r));
+    obj.solve();
+  };
+  obj.getState = () => {
+    return state;
+  };
+  obj.print = () => {
+    let tupleCmp = (a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b));
+    let db = dbAggregates;
+    function pp(ps) {
+      return ps
+        .sort(tupleCmp)
+        .map(([tag, ...terms]) => {
+          let ty = reductionType(relationTypes, tag);
+          if (ty === "bool") {
+            if (valEqual(weight(terms), _true)) {
+              return [tag].concat(core(terms).map(ppTerm)).join(" ");
+            } else {
+              return [tag, ...core(terms).map(ppTerm), "->", "false"].join(" ");
+            }
+          } else {
+            return [tag, ...core(terms).map(ppTerm), "->", ppTerm(weight(terms))].join(
+              " "
+            );
+          }
+        })
+        .join("\n");
+    }
+    console.log(pp(af(db.entries()).map(([core, w]) => [...core, w])));
+  };
+
+  return obj;
 
   /* Definitions */
 
@@ -248,15 +291,15 @@ function seminaive(executionContext) {
     if (debug > 0) console.log(...args);
   }
 
-  function assertEmptyTuple() {
-    for (let rule of rules) {
+  function assertEmptyTuple(theRules = rules) {
+    for (let rule of theRules) {
       if (rule.body.length === 0) {
         assertBinding({ rule, binding: emptyBinding() }, []);
       }
     }
   }
-  function assertTuple(tuple) {
-    for (let rule of rules) {
+  function assertTuple(tuple, theRules = rules) {
+    for (let rule of theRules) {
       for (let { spot, rest } of splitRule(rule.body, tag(tuple))) {
         // bind new tuple
         let context = evalQuery(
@@ -323,7 +366,6 @@ function seminaive(executionContext) {
     let newWeighted = getWeight(core(atom));
     // todo: batching
     if (!valEqual(weight(oldWeighted), weight(newWeighted))) {
-      //if (!tupleEqual(weight(oldWeighted), weight(newWeighted))) {
       queueTupleDel(oldWeighted);
       let { zero } = reductionOps(relationTypes, tag(atom));
       if (!valEqual(weight(newWeighted), zero)) queueTupleAdd(newWeighted);
@@ -336,21 +378,15 @@ function seminaive(executionContext) {
     let { zero, add } = reductionOps(relationTypes, tag(core));
     let values = dbAtoms.get(core);
     let weight = values.reduce((acc, { weight }) => add(acc, weight), zero);
-    if (values.length > 2) {
-      //console.log("\n\nasdf ", values);
-      //console.log("asdf ", weight.value);
-    }
     return core.concat([weight]);
   }
   // actually makes worklist into a stack
   function queueTupleAdd(tuple) {
     log("queueTupleAdd: ", ppTuple(tuple));
-    //worklist = [{ tuple, mod: mod.add }].concat(worklist);
     state.addWorklist.push(tuple);
   }
   function queueTupleDel(tuple) {
     log("queueTupleDel: ", ppTuple(tuple));
-    //worklist = [{ tuple, mod: mod.add }].concat(worklist);
     state.delWorklist.push(tuple);
   }
   function bindingEq(b1, b2) {
@@ -385,9 +421,6 @@ function seminaive(executionContext) {
   function retractBinding(x) {
     changeBinding(x, "del");
   }
-  function depends(tuple) {
-    return dependencies.get(tuple);
-  }
 
   function* splitRule(body, t) {
     function removeAt(array, i) {
@@ -409,7 +442,7 @@ function seminaive(executionContext) {
 function substituteTerm(js, binding, term, allowFresh) {
   if (isLiteral(term)) return evalTerm(js, binding, term);
   // todo: check during parsing
-  assert(isVar(term));
+  assert(isVar(term) || isHole(term));
   let v = term.value;
   let result = binding.get(v);
   if (result) return result;
@@ -438,13 +471,12 @@ function delTuple(state, tuple) {
 export {
   fixRules,
   emptyState,
-  mkProgram,
   evalQuery,
-  seminaive,
   substitute,
   addTuple,
   delTuple,
   reductionType,
   core,
   weight,
+  mkSeminaive,
 };
