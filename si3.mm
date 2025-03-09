@@ -4,6 +4,15 @@ game: ~turn.
   +player 'P,
   +player 'Q.
 
+{deal} game:
+  player P,
+  +player-card P 'run,
+  +player-card P 'act.
+
+spirit-phase:
+  player P,
+  choose 1 (player-card P C).
+
 {turn} turn:
   ~spirit-phase,
   ~fast-phase,
@@ -11,10 +20,3 @@ game: ~turn.
   ~invader-phase,
   ~slow-phase,
   ~time-passes.
-
-spirit-phase:
-  player P,
-  +the-player P,
-  ~growth-phase,
-  ~energy,
-  ~choose-cards.

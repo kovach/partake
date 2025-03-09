@@ -172,16 +172,16 @@ function ppTuple(tuple) {
   return `(${tag(tuple)} ${terms(tuple).map(ppTerm).join(" ")})`;
 }
 
+function fixQuery(q) {
+  let { prefix, query } = dotExpandQuery(q);
+  q = [...prefix, ...query];
+  q = q.map(({ tag, terms }) => [tag].concat(terms));
+  return q;
+}
 function fixRules(rules) {
-  function flatten(q) {
-    let { prefix, query } = dotExpandQuery(q);
-    q = [...prefix, ...query];
-    q = q.map(({ tag, terms }) => [tag].concat(terms));
-    return q;
-  }
   return rules.map(({ head, body, type }) => ({
-    body: flatten(body),
-    head: type === "command" ? head : flatten(head),
+    body: fixQuery(body),
+    head: type === "command" ? head : fixQuery(head),
     id: uniqueInt(),
     type,
   }));
@@ -254,13 +254,18 @@ function mkSeminaive(r, js, relationTypes) {
   obj.getState = () => {
     return state;
   };
-  obj.print = () => {
+  obj.print = (filter = []) => {
     let tupleCmp = (a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b));
     let db = dbAggregates;
+    let excluded = 0;
     function pp(ps) {
       return ps
         .sort(tupleCmp)
         .map(([tag, ...terms]) => {
+          if (filter.includes(tag)) {
+            excluded++;
+            return "";
+          }
           let ty = reductionType(relationTypes, tag);
           if (ty === "bool") {
             if (valEqual(weight(terms), _true)) {
@@ -274,9 +279,11 @@ function mkSeminaive(r, js, relationTypes) {
             );
           }
         })
+        .filter((l) => l.length > 0)
         .join("\n");
     }
     console.log(pp(af(db.entries()).map(([core, w]) => [...core, w])));
+    console.log("hidden tuple count: ", excluded);
   };
 
   return obj;
@@ -479,4 +486,5 @@ export {
   core,
   weight,
   mkSeminaive,
+  fixQuery,
 };

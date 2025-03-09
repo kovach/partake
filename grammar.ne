@@ -80,32 +80,32 @@ quantifier -> "~" _ number {% (d) => ({tag: 'amapLimit', count: d[2]}) %}
 quantifier -> "max" _ number {% (d) => ({tag: 'limit', count: d[2]}) %}
 
 event_expr -> identifier {% (d) => ({ tag: "literal", name: d[0]}) %}
+event_expr -> identifier _ "[" _ pure_query _ "]" {% (d) => ({ tag: "with-tuples", name: d[0], tuples: d[4]}) %}
+#event_expr -> "[" _ event_expr _ "|" _ pure_query _ "]" {% (d) => ({ tag: "with-tuples", body: d[2], tuples: d[6]}) %}
 
 # todo
 #event_expr -> op event_expr _ ";" _ event_expr cp  {% (d) => ({ tag: "concurrent", a: d[1], b: d[5]}) %}
 #event_expr -> op event_expr _ "->" _ event_expr cp {% (d) => ({ tag: "sequence", a: d[1], b: d[5]}) %}
-#event_expr -> "[" _ event_expr _ "|" _ pure_query _ "]" {% (d) => ({ tag: "with-tuples", body: d[2], tuples: d[6]}) %}
 
-episode_expr -> relation {% (d) => [{ tag: "observation", pattern: d[0]}] %}
-episode_expr -> op pure_query cp _ "=>" _ op pure_query cp
-  {% (d) => [{ tag: "modification", before: d[1], after: d[7] }] %}
-episode_expr -> "-" _ pure_query
-  {% (d) => [{tag: "retract", query: d[2] }] %}
-# todo: rename
-#episode_expr -> "+(" _ pure_query cp {% (d) => [{tag: "assert", tuples: d[2] }] %}
-episode_expr -> "+" relation {% (d) => [{tag: "assert", tuple: d[1] }] %}
-episode_expr -> term __ "chooses" __ quantifier __ op pure_query cp
-  {% (d) => [{ tag: "subquery", query: d[7], name: '?'},
-             { tag: "choose", actor: d[0], quantifier: d[4], name: '?' }] %}
-episode_expr -> identifier _ ":=" _ "count" _ op pure_query cp
-  {% (d) => [{ tag: "subquery", query: d[7], name: d[0] },
-             { tag: "count", name: d[0] }] %}
-episode_expr -> term _ bin_op _ term
-  {% (d) => [{tag: 'binOp', operator: d[2], l: d[0], r: d[4]}] %}
-episode_expr -> "!done" {% () => [{tag: "done"}] %}
-episode_expr -> "!do" __ event_expr {% (d) => [{tag: "do", value: d[2]}] %}
 episode_expr -> "~" event_expr {% (d) => [{tag: "do", value: d[1]}] %}
-episode_expr -> op rule_body cp {% (d) => [{tag: "subbranch", branch: d[1] }] %}
+episode_expr -> relation {% (d) => [{ tag: "observation", pattern: d[0]}] %}
+episode_expr -> "+" relation {% (d) => [{tag: "assert", tuple: d[1] }] %}
+episode_expr -> "choose" __ quantifier __ op pure_query cp
+  {% (d) => [{ tag: "choose", quantifier: d[2], value: {query: d[5]} }] %}
+#episode_expr -> "-" _ pure_query {% (d) => [{tag: "retract", query: d[2] }] %}
+#episode_expr -> op pure_query cp _ "=>" _ op pure_query cp {% (d) => [{ tag: "modification", before: d[1], after: d[7] }] %}
+#episode_expr -> "+(" _ pure_query cp {% (d) => [{tag: "assert", tuples: d[2] }] %}
+#episode_expr -> term __ "chooses" __ quantifier __ op pure_query cp
+#  {% (d) => [{ tag: "subquery", query: d[7], name: '?'},
+#             { tag: "choose", actor: d[0], quantifier: d[4], name: '?' }] %}
+#episode_expr -> identifier _ ":=" _ "count" _ op pure_query cp
+#  {% (d) => [{ tag: "subquery", query: d[7], name: d[0] },
+#             { tag: "count", name: d[0] }] %}
+#episode_expr -> term _ bin_op _ term
+#  {% (d) => [{tag: 'binOp', operator: d[2], l: d[0], r: d[4]}] %}
+#episode_expr -> "!done" {% () => [{tag: "done"}] %}
+#episode_expr -> "!do" __ event_expr {% (d) => [{tag: "do", value: d[2]}] %}
+#episode_expr -> op rule_body cp {% (d) => [{tag: "subbranch", branch: d[1] }] %}
 
 episode_list -> episode_expr (_ ","):? {% (d) => d[0] %}
 episode_list -> episode_expr comma episode_list {% (d) => d[0].concat(d[2]) %}
@@ -126,6 +126,6 @@ rule -> rule_header _ rule_body _ "." {% (d) => ({header: d[0], body: d[2] }) %}
 #rule -> identifier rule_separator rule_body _ "." {% (d) => ({head: d[0], type: 'during', body: d[2] }) %}
 #rule -> identifier "!" rule_separator rule_body _ "." {% (d) => ({head: d[0], type: 'after', body: d[3] }) %}
 
-program -> (_ rule):* {% (d) => d[0].map((r) => r[1]) %}
+program -> (_ rule):* _ {% (d) => d[0].map((r) => r[1]) %}
 
 main -> program _ {% id %}

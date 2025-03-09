@@ -21,6 +21,7 @@ import {
   core,
   weight,
   mkSeminaive,
+  fixQuery,
 } from "./derive.js";
 
 function parseRules(text) {
@@ -57,7 +58,7 @@ then X _, reach X Z, contains Z Y --- reach X Y.
 then A B, reach A X, reach B Y --- before X Y.
 
 succeeds I I' --- old I.
-node I, old I -> 0 --- tip I.
+node I, body I _ S, @lt 0 @length(S), old I -> 0 --- tip I.
 
 # TODO needed?
 #delay e -> a, next-delay -> b, @lt a b --- finished e.
@@ -78,13 +79,11 @@ node tag I, rule name tag 'during body, @initBranch name body L B S
 node '_branch I', contains I I', body I' B S, label I' L.
 
 ######### Branch Update
-!force L x, label I L, tip I, contains P I,
-body I B S, @updateBranch I B S B' S'
->>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-node I', body I' B' S', label I' L, succeeds I I', contains P I'.
 
-!force L BindPattern x, label I L, tip I, contains P I,
-body I B S, @le BindPattern B, @updateBranch I B S B' S'
+force L B x --- force L B {} x.
+
+!force L BindPattern Choice x, label I L, tip I, contains P I,
+body I B S, @le BindPattern B, @updateBranch I B S Choice B' S'
 >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 node I', body I' B' S', label I' L, succeeds I I', contains P I'.
 
@@ -114,27 +113,29 @@ function loadRuleTuples(state, stories) {
 }
 
 let _true = mkInt(1);
-let updateBranch = (ec, id, bind, story) => {
+let updateBranch = (ec, id, bind, story, choice) => {
   let state = ec.getState();
   let defs = ec.defs;
   let binding = bind.value;
   let body = story.value;
   console.log("!!!!", id, binding, body);
   let [op, rest] = splitArray(body);
-  function mk(binding) {
-    binding = mkBind(binding);
-    return [id, bind, story, binding, mkBox(rest), _true];
+  function mkRest(binding) {
+    return [id, bind, story, choice, mkBind(binding), mkBox(rest), _true];
+  }
+  function mkCurrent(binding, newStory) {
+    return [id, bind, story, choice, mkBind(binding), mkBox(newStory), _true];
   }
   switch (op.tag) {
     case "do":
       mkChildNode(state, mkSym(op.value.name), id);
-      return [mk(binding)];
+      return [mkRest(binding)];
     case "observation": {
       let pattern = [op.pattern.tag].concat(op.pattern.terms);
       let bindings = af(
         evalQuery({ db: state.dbAggregates, ...defs }, [pattern], [binding])
       );
-      return bindings.map(mk);
+      return bindings.map(mkRest);
     }
     // here
     case "assert": {
@@ -142,7 +143,25 @@ let updateBranch = (ec, id, bind, story) => {
       binding = binding.clone();
       let tuple = substitute(defs.js, binding, pattern, true);
       addTuple(state, tuple);
-      return [mk(binding)];
+      return [mkRest(binding)];
+    }
+    case "choose": {
+      let bindings;
+      if (op.value.query) {
+        let query = fixQuery(op.value.query);
+        bindings = af(evalQuery({ db: state.dbAggregates, ...defs }, query, [binding]));
+      } else {
+        assert(op.value.options);
+        bindings = op.value.options;
+        bindings = bindings.filter((b) => choice.value.unify(b));
+        assert(bindings.length > 0, "invalid choice");
+      }
+      if (bindings.length === 1) {
+        return [mkRest(bindings[0])];
+      } else {
+        let newOp = { ...op, value: { options: bindings } };
+        return [mkCurrent(binding, [newOp, ...rest])];
+      }
     }
     default:
       throw "";
@@ -198,9 +217,9 @@ function mainTest(stories) {
     (...args) =>
     () =>
       addTuple(state, [...args]);
-  let force = (x) => tup("force", mkSym(x), freshId());
-  let forcen = (n, x) => range(n).map((_i) => force(x));
-  let fn = (n, x) => range(n).map((_i) => ec.addRules(parseRules(x)));
+  //let force = (x) => tup("force", mkSym(x), freshId());
+  //let forcen = (n, x) => range(n).map((_i) => force(x));
+  let go = (n, x) => () => range(n).map((_i) => ec.addRules(parseRules(x)));
 
   /* setup */
   let ec = mkSeminaive(derivations, js, relTypes);
@@ -213,12 +232,13 @@ function mainTest(stories) {
   /* execute log of actions */
   // prettier-ignore
   let thelog = [
-    ...forcen(1, "game_1"), // done: 1
-    ...forcen(2, "setup_1"), // done: 2
-    ...forcen(1, "turn_1"),  // done: 6
-    ...forcen(1, 'spirit-phase_1'), // 5
-    () => fn(1," >>> force 'spirit-phase_1 {P: 'P} _."),
-    () => fn(1," >>> force 'spirit-phase_1 {P: 'Q} _."),
+    go(1," >>> force 'game_1 {} _."), // 1
+    go(2," >>> force 'setup_1 {} _."), // 2
+    go(5," >>> force 'deal_1 {} _."), // 5
+    go(1," >>> force 'turn_1 {} _."), // 6
+    go(1," >>> force 'spirit-phase_1 {} _."),
+    go(2," >>> force 'spirit-phase_1 {P: 'P} {C: 'run} _."),
+    go(2," >>> force 'spirit-phase_1 {P: 'Q} {C: 'act} _."),
   ];
   timeFn(() => ec.solve());
   for (let t of thelog) {
@@ -227,8 +247,9 @@ function mainTest(stories) {
   }
 
   /* finish */
-  ec.print();
-  console.log("db.size: ", state.dbAggregates.map.size); // 137
+  let no = ["node", "reach", "old", "contains", "is-branch", "force", "succeeds"];
+  ec.print(no);
+  console.log("db.size: ", state.dbAggregates.map.size); // 214
   console.log(state);
 }
 
@@ -260,10 +281,11 @@ window.onload = () => loadRules(main);
 [x]partial guard rule
 [x]name node by binding
 [x] force by binding
-eval choices
-decide by binding
-GOAL
-spawn episode with local tuple
+[x]eval choices, decide by binding
+[x] basic GOAL
+local
+  spawn episode with local tuple
+  match in DB
 box [eq] method?
 first long script
 list long script examples
