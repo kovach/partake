@@ -1,5 +1,5 @@
-import { assert, ap } from "./collections.js";
-import { Binding } from "./binding.js";
+import { ArrayMap, assert, ap } from "./collections.js";
+//import { Binding } from "./binding.js";
 
 const str = (e) => JSON.stringify(e, null, 2);
 const pp = (x) => console.log(str(x));
@@ -153,10 +153,81 @@ function evalTerm(js, binding, term) {
   return term;
 }
 
+function cloneTerm(term) {
+  switch (term.tag) {
+    case "var":
+    case "sym":
+    case "int":
+      return structuredClone(term);
+    case "set":
+      return { tag: "set", value: term.value.map((b) => b.clone()) };
+    case "box":
+      return term; // !
+    case "bind":
+      return { tag: "bind", value: term.value.clone() };
+    default:
+      throw "";
+  }
+}
+class Binding {
+  substitution = new Map();
+  notes = new ArrayMap();
+
+  constructor(values = []) {
+    for (let [k, v] of values) this.set(k, v);
+  }
+
+  toJSON() {
+    return `{${Array.from(this.substitution.entries())
+      .map(([k, v]) => k + ": " + ppTerm(v))
+      .join(",")}}`;
+  }
+
+  *[Symbol.iterator]() {
+    for (let k of this.substitution.keys()) yield k;
+  }
+
+  clone() {
+    let m = new Binding();
+    //m.notes = new ArrayMap( new Map(structuredClone(Array.from(this.notes.map.entries()))));
+    m.notes = this.notes.clone();
+    m.substitution = this.substitution.map(cloneTerm);
+    return m;
+  }
+
+  unify(b) {
+    let values = [];
+    for (let [key, val] of this.substitution.entries()) {
+      if (b.has(key) && !valEqual(b.get(key), val)) return false;
+      values.push([key, val]);
+    }
+    for (let [key, val] of b.substitution.entries()) {
+      values.push([key, val]);
+    }
+    return Binding(values);
+  }
+  set(key, val) {
+    this.substitution.set(key, val);
+    return this;
+  }
+  get(key) {
+    return this.substitution.get(key);
+  }
+  has(key) {
+    return this.get(key) !== undefined;
+  }
+  eq(b) {
+    for (let [key, val] of this.substitution.entries()) {
+      if (!valEqual(b.get(key), val)) return false;
+    }
+    return true;
+  }
+}
 function emptyBinding() {
   return new Binding();
 }
 
+/*
 // todo profile
 function extendBinding(c, tag, tuple, values, modifiers) {
   assert(Array.isArray(values));
@@ -197,6 +268,7 @@ function evalQuery(db, js, query, context = [emptyBinding()]) {
     })
     .reduce((context, b) => joinBindings(js, context, b), context);
 }
+*/
 
 function valEqual(a, b) {
   if (a.tag !== b.tag) return false;
@@ -209,6 +281,8 @@ function valEqual(a, b) {
       //console.log("box-eq? ", a.value, b.value);
       //console.log(JSON.stringify(a.value), JSON.stringify(b.value));
       return JSON.stringify(a.value) === JSON.stringify(b.value); // TODO
+    case "bind":
+      return a.value.eq(b.value.eq, valEqual);
     default:
       throw "";
   }
@@ -230,6 +304,9 @@ function mkSet(value) {
 function mkBox(value) {
   return { tag: "box", value };
 }
+function mkBind(value) {
+  return { tag: "bind", value };
+}
 
 function ppTerm(term) {
   switch (term.tag) {
@@ -243,8 +320,15 @@ function ppTerm(term) {
       return ppContext(term.value);
     case "call":
       return `#${term.fn}(${term.args.map(ppTerm).join(", ")})`;
+    case "bind":
+      return term.value.toJSON();
     case "box":
-      return `[box: ${term.value}]`;
+      let content = JSON.stringify(term.value);
+      let cutoff = 50;
+      if (content.length > cutoff)
+        content =
+          content.slice(0, cutoff) + `...${content.length - cutoff} chars omitted`;
+      return `[box: ${content}]`;
     default:
       throw "todo";
   }
@@ -330,6 +414,7 @@ export {
   mkSym,
   mkSet,
   mkBox,
+  mkBind,
   tuplesOfDb,
   pp,
   cloneDb,

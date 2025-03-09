@@ -353,13 +353,12 @@ function seminaive(executionContext) {
     return b1.eq(b2, valEqual);
   }
   function insertAtom(db, atom, id, binding) {
-    if (!containsAtom(db, atom, id, binding))
-      db.add(core(atom), { id, binding, weight: weight(atom) });
+    let c = core(atom);
+    if (!containsAtom(db, c, id, binding))
+      db.add(c, { id, binding, weight: weight(atom) });
   }
-  function containsAtom(db, atom, id, binding) {
-    return db
-      .get(core(atom))
-      .some(({ id: i, binding: b }) => i === id && bindingEq(b, binding));
+  function containsAtom(db, c, id, binding) {
+    return db.get(c).some(({ id: i, binding: b }) => i === id && bindingEq(b, binding));
   }
   function removeAtom(db, atom, id, binding) {
     db.update(core(atom), (arr) =>

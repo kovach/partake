@@ -6,6 +6,7 @@ import {
   mkInt,
   mkSym,
   mkBox,
+  mkBind,
   valEqual,
   af,
   ppTuples,
@@ -74,26 +75,19 @@ node I, old I -> 0 --- tip I.
 ############## Updates ##############
 
 ######### Rule Activation
-# Todo
-#node tag id _, rule name tag 'before body, @initBranch name body x
-#>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-#node '_branch new parent, body new -> x, then new id.
-#finished id, node tag id, rule name tag 'after body, @initBranch name body x
-#>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-#node '_branch new parent, body new -> x, then id new.
 
-node tag I, rule name tag 'during body, @initBranch name body L B
+node tag I, rule name tag 'during body, @initBranch name body L B S
 >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-node '_branch I', contains I I', body I' B, label I' L.
+node '_branch I', contains I I', body I' B S, label I' L.
 
 ######### Branch Update
 !force L x, label I L, tip I, contains P I,
-body I B, @updateBranch I B B'
+body I B S, @updateBranch I B S B' S'
 >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-node I', body I' B', label I' L, succeeds I I', contains P I'.
+node I', body I' B' S', label I' L, succeeds I I', contains P I'.
 
 # Diagnostic
-body I B, label I L --- remaining-steps I L @length(@story(B)).
+body I B S, label I L --- remaining-steps I L @length(S).
 `;
 
 let branchCounters = new MonoidMap(
@@ -104,12 +98,7 @@ let branchCounters = new MonoidMap(
 );
 function initBranch(name, body) {
   let { count } = branchCounters.add(name.value, 1);
-  return [
-    name,
-    body,
-    mkSym(name.value + "_" + count),
-    mkBox({ binding: emptyBinding(), body: body.value }),
-  ];
+  return [name, body, mkSym(name.value + "_" + count), mkBind(emptyBinding()), body];
 }
 function loadRuleTuples(state, stories) {
   for (let [type, ruleGroup] of Object.entries(stories)) {
@@ -123,20 +112,18 @@ function loadRuleTuples(state, stories) {
 }
 
 let _true = mkInt(1);
-let updateBranch = (executionContext, id, box) => {
+let updateBranch = (executionContext, id, bind, story) => {
   let {
     state,
-    program: { js },
+    program: { js, relationTypes },
   } = executionContext;
-  let {
-    value: { binding, body },
-  } = box;
+  let binding = bind.value;
+  let body = story.value;
   console.log("!!!!", id, binding, body);
   let [op, rest] = splitArray(body);
-  let result = mkBox({ ...box.value });
-  result.value.body = rest;
   function mk(binding) {
-    return [id, box, mkBox({ binding, body: rest }), _true];
+    binding = mkBind(binding);
+    return [id, bind, story, binding, mkBox(rest), _true];
   }
   switch (op.tag) {
     case "do":
@@ -144,7 +131,9 @@ let updateBranch = (executionContext, id, box) => {
       return [mk(binding)];
     case "observation": {
       let pattern = [op.pattern.tag].concat(op.pattern.terms);
-      let bindings = af(evalQuery({ db: state.dbAggregates, js }, [pattern], [binding]));
+      let bindings = af(
+        evalQuery({ db: state.dbAggregates, js, relationTypes }, [pattern], [binding])
+      );
       return bindings.map(mk);
     }
     // here
@@ -192,6 +181,13 @@ function mainTest(stories) {
     nonemptyBody: tor("nonemptyBody", ({ value: { body } }) => {
       return body.length > 0;
     }),
+    unify: (a, b) => {
+      let out = a.value.unify(b.value, valEqual);
+      if (out) {
+        return [[a, b, mkBind(out), _true]];
+      }
+      return [];
+    },
   };
 
   let s = toTag(mkSym);
@@ -213,8 +209,8 @@ function mainTest(stories) {
   let thelog = [
     ...forcen(1, "game_1"), // done: 1
     ...forcen(2, "setup_1"), // done: 2
-    ...forcen(0, "turn_1"),  // done: 6
-    ...forcen(0, 'spirit-phase_1'), // 5
+    ...forcen(1, "turn_1"),  // done: 6
+    ...forcen(1, 'spirit-phase_1'), // 5
   ];
   timeFn(() => seminaive(executionContext));
   for (let t of thelog) {
@@ -224,7 +220,7 @@ function mainTest(stories) {
 
   /* finish */
   printState(executionContext);
-  console.log("db.size: ", state.dbAggregates.map.size); // 74
+  console.log("db.size: ", state.dbAggregates.map.size); // 117
   console.log(state);
 }
 
