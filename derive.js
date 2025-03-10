@@ -492,6 +492,9 @@ function addTuple(state, tuple) {
   tuple = tuple.concat(mkInt(1));
   state.addWorklist.push(tuple);
 }
+function addTupleWeight(state, tuple) {
+  state.addWorklist.push(tuple);
+}
 function delTuple(state, tuple) {
   tuple = tuple.concat(mkInt(1));
   state.delWorklist.push(tuple);
@@ -503,6 +506,7 @@ export {
   evalQuery,
   substitute,
   addTuple,
+  addTupleWeight,
   delTuple,
   reductionType,
   core,

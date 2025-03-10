@@ -4,10 +4,18 @@
   +player 'P,
   +player 'Q.
 
+mk-card:
+  +card C,
+  +name C .*name,
+  +located C -> .deck.
+
 {deal} game:
+  +deck D,
+  ~mk-card [ *name 'run ],
+  ~mk-card [ *name 'act ],
   player P,
-  +player-card P 'run,
-  +player-card P 'act.
+  +choose-area P _,
+  .
 
 spirit-phase:
   player P,
@@ -15,10 +23,11 @@ spirit-phase:
     [ *player P ].
 
 choose-cards:
+  *player P,
   choose 1 (
-    player-card .*player C,
-    player-card .*player D,
-    ).
+    card C, name C Name,
+    located C -> .deck
+  ), ~move [ *it Id, *to P.choose-area ].
 
 move:
   *it I, *to T,

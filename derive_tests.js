@@ -22,6 +22,7 @@ import {
   weight,
   mkSeminaive,
   fixQuery,
+  addTupleWeight,
 } from "./derive.js";
 
 function parseRules(text) {
@@ -74,9 +75,9 @@ node I, body I _ S, @lt 0 @length(S), old I -> 0 --- tip I.
 
 ######### Rule Activation
 
-node tag I, rule name tag 'during body, @initBranch name body L B S
+node T I, rule name T 'during Body, @initBranch name Body L _ _
 >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-node '_branch I', contains I I', body I' B S, label I' L.
+node '_branch I', contains I I', body I' {} Body, label I' L.
 
 ######### Branch Update
 
@@ -89,7 +90,7 @@ node I', body I' B' S', label I' L, succeeds I I', contains P I'.
 
 # Diagnostic
 body I B S, label I L --- remaining-steps I L @length(S).
-tip I, label I L --- z I L.
+tip I, label I L, body I B S --- z I L B S.
 `;
 
 let branchCounters = new MonoidMap(
@@ -148,10 +149,10 @@ let updateBranch = (ec, parent, id, bind, story, choice) => {
       return bindings.map(mkRest);
     }
     case "assert": {
-      let pattern = core([op.tuple.tag].concat(op.tuple.terms));
+      let pattern = [op.tuple.tag].concat(op.tuple.terms);
       binding = binding.clone();
       let tuple = substitute(defs.js, binding, pattern, true);
-      addTuple(state, tuple);
+      addTupleWeight(state, tuple);
       return [mkRest(binding)];
     }
     case "choose": {
@@ -248,15 +249,21 @@ function mainTest(stories) {
     go(1, " >>> force _ 'turn1_1 {}."), // 1
     go(2, " >>> force _ 'setup_1 {}."), // 2
     go(5, " >>> force _ 'deal_1 {}."), // 5
+    go(5, " >>> force _ 'mk-card_1 {}."), // 5
+    go(5, " >>> force _ 'mk-card_2 {}."), // 5
     go(1, " >>> force _ 'turn_1 {}."), // 6
     go(2, " >>> force _ 'spirit-phase_1 {}."), // 2
-    go(2, " >>> force _ 'choose-cards_1 {} {C: 'act, D: 'run}."), // 3
+    go(1, " >>> force _ 'choose-cards_1 {} {Name: 'act}."), // 5
+    go(4, " >>> force _ 'choose-cards_1 {P: 'P} {Name: 'act}."),
+    go(3, " >>> force _ 'move_1 {} {}."), // 3
     //go(3, " >>> force _ 'choose-cards_2 {} {C: 'run}."), // 3
   ];
   timeFn(() => ec.solve());
+  let i = 0;
   for (let t of thelog) {
-    t();
-    timeFn(() => ec.solve());
+    console.log("iter:", i++);
+    timeFn(t);
+    //timeFn(() => ec.solve());
   }
 
   /* finish */
@@ -271,8 +278,8 @@ function mainTest(stories) {
     "force",
     "succeeds",
   ];
-  ec.print(omit);
-  console.log("db.size: ", state.dbAggregates.map.size); // 335
+  timeFn(() => ec.print(omit));
+  console.log("db.size: ", state.dbAggregates.map.size); // 650
   console.log(state);
 }
 
@@ -281,7 +288,7 @@ function timeFn(fn) {
   fn();
   let t1 = performance.now();
   let ms = t1 - t0;
-  console.log("time: ", ms);
+  if (ms > 0) console.log("time: ", ms);
   return ms;
 }
 
@@ -292,7 +299,7 @@ function loadRules(fn) {
 }
 
 function main(stories) {
-  mainTest(stories);
+  timeFn(() => mainTest(stories));
 }
 
 window.onload = () => loadRules(main);
@@ -311,6 +318,7 @@ a long script
 list long script examples
 temporal pattern
 ? remove invocation index
+quantifier
 
 box [eq] method?
 ! dot expand derive rules

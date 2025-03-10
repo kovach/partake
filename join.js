@@ -308,9 +308,11 @@ function ppEpisode(e) {
       }
     }
     case "do": {
-      let { value, tuples } = e;
-      if (!tuples || tuples.length === 0) return `~${value}`;
-      return `~${value} [ ${ppQuery(tuples)} ]`;
+      let {
+        value: { name, tuples },
+      } = e;
+      if (!tuples || tuples.length === 0) return `~${name}`;
+      return `~${name} [ ${ppQuery(tuples)} ]`;
     }
     case "assert": {
       let { tuple } = e;
