@@ -187,6 +187,7 @@ function mainTest(stories) {
     "next-delay": "min",
     steps: "num",
     forceSteps: "num",
+    located: "last",
   };
   let derivations = parseRules(mainProgram);
 
@@ -249,8 +250,8 @@ function mainTest(stories) {
     go(5, " >>> force _ 'deal_1 {}."), // 5
     go(1, " >>> force _ 'turn_1 {}."), // 6
     go(2, " >>> force _ 'spirit-phase_1 {}."), // 2
-    go(3, " >>> force _ 'choose-cards_1 {} {C: 'act}."), // 3
-    go(3, " >>> force _ 'choose-cards_2 {} {C: 'run}."), // 3
+    go(2, " >>> force _ 'choose-cards_1 {} {C: 'act, D: 'run}."), // 3
+    //go(3, " >>> force _ 'choose-cards_2 {} {C: 'run}."), // 3
   ];
   timeFn(() => ec.solve());
   for (let t of thelog) {
@@ -271,7 +272,7 @@ function mainTest(stories) {
     "succeeds",
   ];
   ec.print(omit);
-  console.log("db.size: ", state.dbAggregates.map.size); // 395
+  console.log("db.size: ", state.dbAggregates.map.size); // 335
   console.log(state);
 }
 

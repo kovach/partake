@@ -15,8 +15,14 @@ spirit-phase:
     [ *player P ].
 
 choose-cards:
-  *player X,
-  choose 1 (player-card X C).
+  choose 1 (
+    player-card .*player C,
+    player-card .*player D,
+    ).
+
+move:
+  *it I, *to T,
+  +located I -> T.
 
 {turn} turn:
   ~spirit-phase,

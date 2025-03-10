@@ -278,6 +278,48 @@ function mkBind(value) {
   return { tag: "bind", value };
 }
 
+function ppQuantifier(quantifier) {
+  switch (quantifier.tag) {
+    case "eq":
+      return `${quantifier.count}`;
+    case "limit":
+      return `max ${quantifier.count}`;
+    case "amapLimit":
+      return `~${quantifier.count}`;
+  }
+}
+function ppQuery(ps) {
+  return ps.map(({ tag, terms }) => [tag].concat(terms.map(ppTerm)).join(" ")).join(", ");
+}
+function ppEpisode(e) {
+  switch (e.tag) {
+    case "observation": {
+      return `${ppQuery([e.pattern])}`;
+    }
+    case "choose": {
+      let { quantifier, value } = e;
+      if (value.query) {
+        return `choose ${ppQuantifier(quantifier)} (${ppQuery(value.query)})`;
+      } else {
+        assert(value.options);
+        return `choose ${ppQuantifier(quantifier)} (${value.options.map((b) =>
+          b.toJSON()
+        )})`;
+      }
+    }
+    case "do": {
+      let { value, tuples } = e;
+      if (!tuples || tuples.length === 0) return `~${value}`;
+      return `~${value} [ ${ppQuery(tuples)} ]`;
+    }
+    case "assert": {
+      let { tuple } = e;
+      return `+${ppQuery([tuple])}`;
+    }
+    default:
+      throw "";
+  }
+}
 function ppTerm(term) {
   switch (term.tag) {
     case "var":
@@ -293,12 +335,20 @@ function ppTerm(term) {
     case "bind":
       return term.value.toJSON();
     case "box":
-      let content = JSON.stringify(term.value);
-      let cutoff = 50;
-      if (content.length > cutoff)
-        content =
-          content.slice(0, cutoff) + `...${content.length - cutoff} chars omitted`;
-      return `(box: ${content})`;
+      // todo
+      if (
+        Array.isArray(term.value) &&
+        term.value.some((elem) => elem.tag !== undefined)
+      ) {
+        return `(box:[${term.value.map(ppEpisode).join(", ")}])`;
+      } else {
+        let content = JSON.stringify(term.value);
+        let cutoff = 50;
+        if (content.length > cutoff)
+          content =
+            content.slice(0, cutoff) + `...${content.length - cutoff} chars omitted`;
+        return `(box: ${content})`;
+      }
     default:
       throw "todo";
   }

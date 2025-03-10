@@ -1,6 +1,6 @@
 import grammar from "./grammar.js";
 import { ArrayMap, assert, unzip, zip } from "./collections.js";
-import { Binding, mkBind } from "./join.js";
+import { Binding, mkBind, mkInt, mkVar, uniqueInt } from "./join.js";
 
 function parseNonterminal(nt, text) {
   let assertAmbiguity = true;
@@ -46,7 +46,7 @@ function dotExpandTerm(t) {
         // todo: maybe we want this semantics change
         //v = mkVar("?" + right);
       }
-      terms.push(v);
+      terms.push(v, mkInt(1));
       prefix.push({ tag: right, terms });
 
       return {
@@ -139,7 +139,11 @@ function dotExpandRuleBody(body) {
           return [{ tag: "subquery", name, query: prefix.concat(query) }];
         }
         case "choose":
-          return [p];
+          let {
+            value: { query: q },
+          } = p;
+          let { prefix, query } = dotExpandQuery(q);
+          return [{ ...p, value: { query: [...prefix, ...query] } }];
         case "do": {
           let { prefix, episode } = dotExpandEpisode(p.value);
           return fix(prefix).concat([{ tag: "do", value: episode }]);
