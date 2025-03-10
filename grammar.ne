@@ -17,6 +17,10 @@ var -> identifier {% id %}
 # if a >>>-rule contains `!predicate`s, only those can trigger updates
 predicate -> "!" identifier {% (d) => ("!"+d[1]) %}
 predicate -> identifier {% id %}
+predicate -> local_predicate {% id %}
+predicate -> extern_predicate {% id %}
+local_predicate -> "*" identifier {% (d) => ("*"+d[1]) %}
+extern_predicate -> "@" identifier {% (d) => ("@"+d[1]) %}
 
 # foo(a, b)
 arg_list -> null {% (d) => ([]) %}
@@ -43,8 +47,8 @@ term -> fn_call {% id %}
 term -> binding_expr {% id %}
 
 # pred2 x y @fn(x)
-relation -> predicate (__ term):*               {% (d) => ({tag: d[0], terms: d[1].map(t => t[1]).concat([{tag: 'int', value: 1}])}) %} relation -> predicate (__ term):* _ "->" _ term {% (d) => ({tag: d[0], terms: d[1].map(t => t[1]).concat([d[5]])}) %}
-relation -> "@" predicate (__ term):*           {% (d) => ({tag: "@"+d[1], terms: d[2].map(t => t[1]).concat([{tag: 'int', value: 1}])}) %}
+relation -> predicate (__ term):*               {% (d) => ({tag: d[0], terms: d[1].map(t => t[1]).concat([{tag: 'int', value: 1}])}) %}
+relation -> predicate (__ term):* _ "->" _ term {% (d) => ({tag: d[0], terms: d[1].map(t => t[1]).concat([d[5]])}) %}
 
 # p2 x y, p1 z, foo
 relation_list -> relation (_ ","):? {% (d) => [d[0]] %}
@@ -81,17 +85,17 @@ quantifier -> "max" _ number {% (d) => ({tag: 'limit', count: d[2]}) %}
 
 event_expr -> identifier {% (d) => ({ tag: "literal", name: d[0]}) %}
 event_expr -> identifier _ "[" _ pure_query _ "]" {% (d) => ({ tag: "with-tuples", name: d[0], tuples: d[4]}) %}
-#event_expr -> "[" _ event_expr _ "|" _ pure_query _ "]" {% (d) => ({ tag: "with-tuples", body: d[2], tuples: d[6]}) %}
 
-# todo
 #event_expr -> op event_expr _ ";" _ event_expr cp  {% (d) => ({ tag: "concurrent", a: d[1], b: d[5]}) %}
 #event_expr -> op event_expr _ "->" _ event_expr cp {% (d) => ({ tag: "sequence", a: d[1], b: d[5]}) %}
+#event_expr -> "[" _ event_expr _ "|" _ pure_query _ "]" {% (d) => ({ tag: "with-tuples", body: d[2], tuples: d[6]}) %}
 
 episode_expr -> "~" event_expr {% (d) => [{tag: "do", value: d[1]}] %}
 episode_expr -> relation {% (d) => [{ tag: "observation", pattern: d[0]}] %}
 episode_expr -> "+" relation {% (d) => [{tag: "assert", tuple: d[1] }] %}
 episode_expr -> "choose" __ quantifier __ op pure_query cp
   {% (d) => [{ tag: "choose", quantifier: d[2], value: {query: d[5]} }] %}
+
 #episode_expr -> "-" _ pure_query {% (d) => [{tag: "retract", query: d[2] }] %}
 #episode_expr -> op pure_query cp _ "=>" _ op pure_query cp {% (d) => [{ tag: "modification", before: d[1], after: d[7] }] %}
 #episode_expr -> "+(" _ pure_query cp {% (d) => [{tag: "assert", tuples: d[2] }] %}

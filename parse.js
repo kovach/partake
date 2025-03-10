@@ -89,25 +89,26 @@ function dotExpandEpisode(expr) {
   let recurse = dotExpandEpisode;
   let mk = (prefix, episode) => ({ prefix, episode });
   switch (expr.tag) {
-    case "done": {
-      return mk([], expr);
-    }
+    //case "done": {
+    //  return mk([], expr);
+    //}
     case "literal": {
-      return mk([], expr);
+      return mk([], { ...expr, tuples: [] });
     }
-    case "concurrent":
-    case "sequence": {
-      let { a, b } = expr;
-      let ra = recurse(a);
-      let rb = recurse(b);
-      return mk(ra.prefix.concat(rb.prefix), { ...expr, a: ra.episode, b: rb.episode });
-    }
+    //case "concurrent":
+    //case "sequence": {
+    //  let { a, b } = expr;
+    //  let ra = recurse(a);
+    //  let rb = recurse(b);
+    //  return mk(ra.prefix.concat(rb.prefix), { ...expr, a: ra.episode, b: rb.episode });
+    //}
     case "with-tuples": {
-      let { tuples, body } = expr;
+      let { tuples, name } = expr;
       // may update binding:
       let { prefix, query } = dotExpandQuery(tuples);
-      let r = recurse(body);
-      return mk(r.prefix.concat(prefix), { ...expr, tuples: query, body: r.episode });
+      return mk(prefix, { ...expr, tuples: query, name });
+      //let r = recurse(body);
+      //return mk(r.prefix.concat(prefix), { ...expr, tuples: query, body: r.episode });
     }
     default:
       throw "";

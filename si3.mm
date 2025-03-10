@@ -1,4 +1,4 @@
-game: ~turn.
+{turn1} game: ~turn.
 
 {setup} game:
   +player 'P,
@@ -11,7 +11,12 @@ game: ~turn.
 
 spirit-phase:
   player P,
-  choose 1 (player-card P C).
+  ~choose-cards
+    [ *player P ].
+
+choose-cards:
+  *player X,
+  choose 1 (player-card X C).
 
 {turn} turn:
   ~spirit-phase,

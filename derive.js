@@ -42,22 +42,44 @@ function reductionOps(relationTypes, tag) {
   return semirings[ty];
 }
 
-function evalQuery({ db, js, relationTypes }, query, context = [emptyBinding()]) {
+function evalQuery(
+  { location, db, js, relationTypes },
+  query,
+  context = [emptyBinding()]
+) {
   // redundant. done to ensure result does not contain any input context
   if (query.length === 0) return context.map((c) => c.clone());
 
   return query.reduce(joinBindings, context);
 
-  function* readDb(tag, c, values) {
-    let extern = tag[0] === "@";
-    if (extern) {
-      for (let x of js[tag.slice(1)](...values)) {
-        yield [tag, ...x];
-      }
-    } else {
-      for (let [core, weight] of db.entries()) {
-        yield [...core, weight];
-      }
+  // todo: need tag type abstraction
+  function* readDb(t, c, values) {
+    let marker = t[0];
+    switch (marker) {
+      case "@":
+        for (let x of js[t.slice(1)](...values)) {
+          yield [t, ...x];
+        }
+        break;
+      case "*":
+        for (let [core, weight] of db.entries()) {
+          let t2 = tag(core);
+          if (t === t2) {
+            assert(location);
+            let [_tag, id_, ...vals] = [...core, weight];
+            if (valEqual(id_, location)) {
+              let result = [_tag, ...vals];
+              yield result;
+            } else {
+            }
+          }
+        }
+        break;
+      default:
+        for (let [core, weight] of db.entries()) {
+          yield [...core, weight];
+        }
+        break;
     }
   }
 

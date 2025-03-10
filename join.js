@@ -209,7 +209,6 @@ class Binding {
     let values = [];
     for (let [key, val] of this.substitution.entries()) {
       if (b.has(key)) {
-        console.log("both: ", key);
       }
       if (b.has(key) && !valEqual(b.get(key), val)) return false;
       values.push([key, val]);
@@ -299,7 +298,7 @@ function ppTerm(term) {
       if (content.length > cutoff)
         content =
           content.slice(0, cutoff) + `...${content.length - cutoff} chars omitted`;
-      return `[box: ${content}]`;
+      return `(box: ${content})`;
     default:
       throw "todo";
   }

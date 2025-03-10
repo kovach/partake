@@ -38,6 +38,7 @@ function mkNode(state, tag) {
 function mkChildNode(state, tag, parent) {
   let newId = mkNode(state, tag);
   addTuple(state, ["contains", parent, newId]);
+  return newId;
 }
 function tor(name, fn) {
   return (...args) => (fn(...args) ? [[...args]] : []);
@@ -53,8 +54,7 @@ node _ id --- node id.
 node '_branch id --- is-branch id.
 
 node id --- reach id id.
-then _ X, reach X Z, contains Z Y --- reach X Y.
-then X _, reach X Z, contains Z Y --- reach X Y.
+reach X Z, contains Z Y --- reach X Y.
 then A B, reach A X, reach B Y --- before X Y.
 
 succeeds I I' --- old I.
@@ -80,15 +80,16 @@ node '_branch I', contains I I', body I' B S, label I' L.
 
 ######### Branch Update
 
-force L B x --- force L B {} x.
+force x L B --- force x L B {}.
 
-!force L BindPattern Choice x, label I L, tip I, contains P I,
-body I B S, @le BindPattern B, @updateBranch I B S Choice B' S'
+!force x L BindPattern Choice, label I L, tip I, contains P I,
+body I B S, @le BindPattern B, @updateBranch P I B S Choice B' S'
 >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 node I', body I' B' S', label I' L, succeeds I I', contains P I'.
 
 # Diagnostic
 body I B S, label I L --- remaining-steps I L @length(S).
+tip I, label I L --- z I L.
 `;
 
 let branchCounters = new MonoidMap(
@@ -113,31 +114,39 @@ function loadRuleTuples(state, stories) {
 }
 
 let _true = mkInt(1);
-let updateBranch = (ec, id, bind, story, choice) => {
+let updateBranch = (ec, parent, id, bind, story, choice) => {
   let state = ec.getState();
   let defs = ec.defs;
   let binding = bind.value;
   let body = story.value;
-  console.log("!!!!", id, binding, body);
   let [op, rest] = splitArray(body);
   function mkRest(binding) {
-    return [id, bind, story, choice, mkBind(binding), mkBox(rest), _true];
+    return [parent, id, bind, story, choice, mkBind(binding), mkBox(rest), _true];
   }
   function mkCurrent(binding, newStory) {
-    return [id, bind, story, choice, mkBind(binding), mkBox(newStory), _true];
+    return [parent, id, bind, story, choice, mkBind(binding), mkBox(newStory), _true];
   }
   switch (op.tag) {
     case "do":
-      mkChildNode(state, mkSym(op.value.name), id);
+      let { name, tuples } = op.value;
+      let newChild = mkChildNode(state, mkSym(name), id);
+      for (let { tag, terms } of tuples) {
+        let tuple = [tag, newChild, ...core(terms)];
+        tuple = substitute(defs.js, binding, tuple, true);
+        addTuple(state, tuple);
+      }
       return [mkRest(binding)];
     case "observation": {
       let pattern = [op.pattern.tag].concat(op.pattern.terms);
       let bindings = af(
-        evalQuery({ db: state.dbAggregates, ...defs }, [pattern], [binding])
+        evalQuery(
+          { location: parent, db: state.dbAggregates, ...defs },
+          [pattern],
+          [binding]
+        )
       );
       return bindings.map(mkRest);
     }
-    // here
     case "assert": {
       let pattern = core([op.tuple.tag].concat(op.tuple.terms));
       binding = binding.clone();
@@ -149,7 +158,11 @@ let updateBranch = (ec, id, bind, story, choice) => {
       let bindings;
       if (op.value.query) {
         let query = fixQuery(op.value.query);
-        bindings = af(evalQuery({ db: state.dbAggregates, ...defs }, query, [binding]));
+        bindings = af(
+          evalQuery({ location: parent, db: state.dbAggregates, ...defs }, query, [
+            binding,
+          ])
+        );
       } else {
         assert(op.value.options);
         bindings = op.value.options;
@@ -230,15 +243,14 @@ function mainTest(stories) {
   mkNode(state, s`game`);
 
   /* execute log of actions */
-  // prettier-ignore
   let thelog = [
-    go(1," >>> force 'game_1 {} _."), // 1
-    go(2," >>> force 'setup_1 {} _."), // 2
-    go(5," >>> force 'deal_1 {} _."), // 5
-    go(1," >>> force 'turn_1 {} _."), // 6
-    go(1," >>> force 'spirit-phase_1 {} _."),
-    go(2," >>> force 'spirit-phase_1 {P: 'P} {C: 'run} _."),
-    go(2," >>> force 'spirit-phase_1 {P: 'Q} {C: 'act} _."),
+    go(1, " >>> force _ 'turn1_1 {}."), // 1
+    go(2, " >>> force _ 'setup_1 {}."), // 2
+    go(5, " >>> force _ 'deal_1 {}."), // 5
+    go(1, " >>> force _ 'turn_1 {}."), // 6
+    go(2, " >>> force _ 'spirit-phase_1 {}."), // 2
+    go(3, " >>> force _ 'choose-cards_1 {} {C: 'act}."), // 3
+    go(3, " >>> force _ 'choose-cards_2 {} {C: 'run}."), // 3
   ];
   timeFn(() => ec.solve());
   for (let t of thelog) {
@@ -247,9 +259,19 @@ function mainTest(stories) {
   }
 
   /* finish */
-  let no = ["node", "reach", "old", "contains", "is-branch", "force", "succeeds"];
-  ec.print(no);
-  console.log("db.size: ", state.dbAggregates.map.size); // 214
+  let omit = [
+    //"foo",
+    "reach",
+    "remaining-steps",
+    "contains",
+    "old",
+    "node",
+    "is-branch",
+    "force",
+    "succeeds",
+  ];
+  ec.print(omit);
+  console.log("db.size: ", state.dbAggregates.map.size); // 395
   console.log(state);
 }
 
@@ -283,19 +305,18 @@ window.onload = () => loadRules(main);
 [x] force by binding
 [x]eval choices, decide by binding
 [x] basic GOAL
-local
-  spawn episode with local tuple
-  match in DB
-box [eq] method?
-first long script
+[x]spawn episode with local tuple, match (only immediate child for now)
+a long script
 list long script examples
-! immutable bindings
 temporal pattern
-? delete tuple in >>>
+? remove invocation index
 
+box [eq] method?
 ! dot expand derive rules
 revive old unit tests
+? immutable bindings
 ? enrich patterns with relationType/js content
 query live db interface
 save derivation traces for regression tests
+? delete tuple in >>>
 */
