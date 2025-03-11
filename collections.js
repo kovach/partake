@@ -11,6 +11,10 @@ function assert(cond, msg = "") {
   }
 }
 
+Array.prototype.sum = function () {
+  return this.reduce((a, b) => a + b, 0);
+};
+
 // use like this:
 //   let x = toTag(f)
 //   ... x`some string` ...

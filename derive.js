@@ -13,8 +13,50 @@ import {
   mkBox,
   ppTerm,
 } from "./join.js";
-import { assert, range, KeyedMap, ArrayMap } from "./collections.js";
+import { assert, range, KeyedMap, ArrayMap, MonoidMap } from "./collections.js";
 import { dotExpandQuery } from "./parse.js";
+
+class DB {
+  constructor(tuples = []) {
+    this.value = new MonoidMap(
+      () => new KeyedMap(key),
+      () => {
+        throw "";
+      }
+    );
+    for (let t of tuples) {
+      this.addTuple(t);
+    }
+  }
+  addTuple(tuple) {
+    this.value.get(tag(tuple)).set(core(tuple), weight(tuple));
+  }
+  addCW(c, w) {
+    this.value.get(tag(c)).set(c, w);
+  }
+  remove(c) {
+    this.value.get(tag(c)).delete(c);
+  }
+  has(core) {
+    return this.value.get(tag(core)).contains(core);
+  }
+  weight(core) {
+    return this.value.get(tag(core)).get(core);
+  }
+  *all() {
+    for (let db of this.value.map.values()) {
+      yield* db.entries();
+    }
+  }
+  *ofTag(tag) {
+    yield* this.value.get(tag).entries();
+  }
+  size() {
+    return af(this.value.map.values())
+      .map((m) => m.map.size)
+      .sum();
+  }
+}
 
 let _true = mkInt(1);
 
@@ -62,7 +104,7 @@ function evalQuery(
         }
         break;
       case "*":
-        for (let [core, weight] of db.entries()) {
+        for (let [core, weight] of db.ofTag(t)) {
           let t2 = tag(core);
           if (t === t2) {
             assert(location);
@@ -76,7 +118,7 @@ function evalQuery(
         }
         break;
       default:
-        for (let [core, weight] of db.entries()) {
+        for (let [core, weight] of db.ofTag(t)) {
           yield [...core, weight];
         }
         break;
@@ -87,10 +129,10 @@ function evalQuery(
     // weird format
     let c = [tag, ...core(values)];
     let w = weight(values); // w = zero
-    if (db.contains(c)) {
-      return [...c, db.get(c)];
+    if (db.has(c)) {
+      return [...c, db.weight(c)];
     }
-    db.set(c, w);
+    db.addCW(c, w);
     return [...c, w];
   }
 
@@ -155,9 +197,6 @@ function evalQuery(
 function key(tuple) {
   return JSON.stringify(tuple);
 }
-function singletonDb(tuple) {
-  return new KeyedMap(key, [[core(tuple), weight(tuple)]]);
-}
 
 /* Datalog evaluation state:
  *   dbAtoms: maps (tuple -> {(binding, weight)}),
@@ -168,7 +207,7 @@ function singletonDb(tuple) {
 function emptyState() {
   return {
     dbAtoms: new ArrayMap(new KeyedMap(key)),
-    dbAggregates: new KeyedMap(key),
+    dbAggregates: new DB(),
     addWorklist: [],
     delWorklist: [],
     init: true,
@@ -224,10 +263,6 @@ let mod = {
   },
 };
 
-function dbTuples(db) {
-  return af(db.entries()).map(([core, weight]) => [...core, weight]);
-}
-
 /* Main logic: iteratively derive and aggregate implications of `program.rules`.
  * mutates state
  */
@@ -266,8 +301,8 @@ function mkSeminaive(r, js, relationTypes) {
   obj.addRules = (rs) => {
     // find all result bindings from just new rule; no fixpoint
     assertEmptyTuple(rs);
-    for (let tuple of dbTuples(dbAggregates)) {
-      assertTuple(tuple, rs);
+    for (let [c, w] of dbAggregates.all()) {
+      assertTuple([...c, w], rs);
     }
     // add rule and solve
     rs.forEach((r) => rules.push(r));
@@ -278,7 +313,6 @@ function mkSeminaive(r, js, relationTypes) {
   };
   obj.print = (filter = []) => {
     let tupleCmp = (a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b));
-    let db = dbAggregates;
     let excluded = 0;
     function pp(ps) {
       return ps
@@ -304,13 +338,11 @@ function mkSeminaive(r, js, relationTypes) {
         .filter((l) => l.length > 0)
         .join("\n");
     }
-    console.log(pp(af(db.entries()).map(([core, w]) => [...core, w])));
+    console.log(pp(af(dbAggregates.all()).map(([core, w]) => [...core, w])));
     console.log("hidden tuple count: ", excluded);
   };
 
   return obj;
-
-  /* Definitions */
 
   function log(...args) {
     if (debug > 1) console.log(...args);
@@ -332,7 +364,7 @@ function mkSeminaive(r, js, relationTypes) {
       for (let { spot, rest } of splitRule(rule.body, tag(tuple))) {
         // bind new tuple
         let context = evalQuery(
-          { db: singletonDb(tuple), js, relationTypes },
+          { db: new DB([tuple]), js, relationTypes },
           [spot],
           [emptyBinding()]
         );
@@ -347,7 +379,7 @@ function mkSeminaive(r, js, relationTypes) {
       }
     }
     // insert tuple
-    dbAggregates.set(core(tuple), weight(tuple));
+    dbAggregates.addTuple(tuple);
   }
 
   function assertBinding(x, used) {
@@ -445,7 +477,7 @@ function mkSeminaive(r, js, relationTypes) {
     }
     dependencies.reset(tuple);
     state.addWorklist = state.addWorklist.filter((t) => !tupleEqual(t, tuple));
-    dbAggregates.delete(core(tuple));
+    dbAggregates.remove(core(tuple));
   }
   function retractBinding(x) {
     changeBinding(x, "del");

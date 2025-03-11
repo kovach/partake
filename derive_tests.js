@@ -232,8 +232,6 @@ function mainTest(stories) {
     (...args) =>
     () =>
       addTuple(state, [...args]);
-  //let force = (x) => tup("force", mkSym(x), freshId());
-  //let forcen = (n, x) => range(n).map((_i) => force(x));
   let go = (n, x) => () => range(n).map((_i) => ec.addRules(parseRules(x)));
 
   /* setup */
@@ -279,10 +277,9 @@ function mainTest(stories) {
     "succeeds",
   ];
   timeFn(() => ec.print(omit));
-  console.log("db.size: ", state.dbAggregates.map.size); // 650
+  console.log("db.size: ", state.dbAggregates.size()); // 650 ~ 200ms
   console.log(state);
 }
-
 function timeFn(fn) {
   let t0 = performance.now();
   fn();
@@ -314,11 +311,17 @@ window.onload = () => loadRules(main);
 [x]eval choices, decide by binding
 [x] basic GOAL
 [x]spawn episode with local tuple, match (only immediate child for now)
+user datalog
 a long script
 list long script examples
 temporal pattern
-? remove invocation index
 quantifier
+
+pain issues
+  label numbering
+  eval until choice
+    ? parse trail format
+  perf
 
 box [eq] method?
 ! dot expand derive rules
