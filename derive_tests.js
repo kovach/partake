@@ -1,3 +1,4 @@
+import { randomSample } from "./random.js";
 import { assert, range, MonoidMap, splitArray, toTag } from "./collections.js";
 import { parseNonterminal, parseProgram } from "./parse.js";
 import {
@@ -65,14 +66,13 @@ const mainProgram = `
 node _ id --- node id.
 node '_branch id --- is-branch id.
 
-node id --- reach id id.
-reach X Z, contains Z Y --- reach X Y.
-then A B, reach A X, reach B Y --- before X Y.
-
 succeeds I I' --- old I.
 node I, body I _ S, @lt 0 @length(S), old I -> 0 --- tip I.
 
 # TODO needed?
+#node id --- reach id id.
+#reach X Z, contains Z Y --- reach X Y.
+#then A B, reach A X, reach B Y --- before X Y.
 #delay e -> a, next-delay -> b, @lt a b --- finished e.
 #node id --- delay id -> 0.
 #before x y, delay x -> a --- delay y -> @add(a,1).
@@ -95,13 +95,14 @@ node I', contains I I', body I' {} Body, label I' L.
 force x L B --- force x L B {}.
 
 !force x L BindPattern Choice, label I L, tip I, contains P I,
-body I B S, @le BindPattern B, @updateBranch P I B S Choice B' S'
+body I B S, @le BindPattern B, @updateBranch P I L B S Choice L' B' S'
 >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-node I', body I' B' S', label I' L, succeeds I I', contains P I'.
+node I', body I' B' S', label I' L', succeeds I I', contains P I'.
 
 # Diagnostic
-body I B S, label I L --- remaining-steps I L @length(S).
 tip I, label I L, body I B S, contains P I --- z P I L B S.
+
+#body I B S, label I L --- remaining-steps I L @length(S).
 `;
 
 let branchCounters = new MonoidMap(
@@ -116,17 +117,28 @@ function initBranch(name, body) {
 }
 
 let _true = mkInt(1);
-let updateBranch = (ec, parent, id, bind, story, choice) => {
+let updateBranch = (ec, parent, id, label, bind, story, choice) => {
   let state = ec.getState();
   let defs = ec.defs;
   let binding = bind.value;
   let body = story.value;
   let [op, rest] = splitArray(body);
-  function mkRest(binding) {
-    return [parent, id, bind, story, choice, mkBind(binding), mkBox(rest), _true];
+  function mk(newLabel, binding, newStory) {
+    return [
+      parent,
+      id,
+      label,
+      bind,
+      story,
+      choice,
+      newLabel,
+      mkBind(binding),
+      mkBox(newStory),
+      _true,
+    ];
   }
-  function mkCurrent(binding, newStory) {
-    return [parent, id, bind, story, choice, mkBind(binding), mkBox(newStory), _true];
+  function mkRest(binding) {
+    return mk(label, binding, rest);
   }
   switch (op.tag) {
     case "do":
@@ -169,15 +181,27 @@ let updateBranch = (ec, parent, id, bind, story, choice) => {
       } else {
         assert(op.value.options);
         bindings = op.value.options;
-        bindings = bindings.filter((b) => choice.value.unify(b));
-        assert(bindings.length > 0, "invalid choice");
+      }
+      bindings = bindings.filter((b) => choice.value.unify(b));
+      assert(bindings.length > 0, "invalid choice");
+      let { quantifier } = op;
+      switch (quantifier.tag) {
+        case "eq":
+          if (bindings.length === quantifier.count) {
+            return bindings.map(mkRest);
+          }
+          break;
+        case "random":
+          bindings = randomSample(bindings, quantifier.count);
+          return bindings.map(mkRest);
       }
       // if one option remains, proceed
-      if (bindings.length === 1) {
-        return [mkRest(bindings[0])];
-      } else {
+      // if (bindings.length === 1) {
+      //   return [mkRest(bindings[0])];
+      // } else
+      {
         let newOp = { ...op, value: { options: bindings } };
-        return [mkCurrent(binding, [newOp, ...rest])];
+        return [mk(label, binding, [newOp, ...rest])];
       }
     }
     case "branch":
@@ -189,6 +213,13 @@ let updateBranch = (ec, parent, id, bind, story, choice) => {
         addTuple(state, ["contains", parent, id]);
       });
       return [mkRest(binding)];
+    // todo: desugar this to `branch`
+    case "subStory":
+      return [
+        mk({ ...label, value: label.value + "_sub" }, binding, op.story),
+        mkRest(binding),
+      ];
+      throw "";
     default:
       throw "";
   }
@@ -256,13 +287,14 @@ function mainTest(stories, userRules) {
   mkNode(state, s`game`);
 
   /* execute log of actions */
+  // prettier-ignore
   let thelog = [
-    go(3, " >>> force _ 'setup_1 {}."), // 6
+    go(4, " >>> force _ 'setup_1 {}."), // 6
     go(5, " >>> force _ 'deal_1 {}."), // 5
     go(5, " >>> force _ 'mk-card_1 {}."), // 5
     go(5, " >>> force _ 'mk-card_2 {}."), // 5
 
-    // test push
+    // test push. remove
     go(1, " >>> force _ 'foo_1 {}."), // 1
     go(3, " >>> force _ 'push_1 {} {L:2}."), // 2
     go(3, " >>> force _ 'move_1 {}."), //
@@ -270,15 +302,21 @@ function mainTest(stories, userRules) {
     go(1, " >>> force _ 'turn1_1 {}."), // 1
     go(1, " >>> force _ 'turn_1 {}."), // 6
     go(2, " >>> force _ 'spirit-phase_1 {}."), // 2
-    go(1, " >>> force _ 'choose-cards_1 {} {}."), // 5
-    go(4, " >>> force _ 'choose-cards_1 {P: 'P} {Name: 'instruments}."),
-    go(3, " >>> force _ 'move_2 {} {}."), // 3
+    go(2, " >>> force _ 'do-growth_1 {}."), // 2
+    go(2, " >>> force _ 'deal-cards_1 {} {}."), // 5
+      go(3, " >>> force _ 'deal-cards_1_sub {} {}."), // 3
+        go(3, " >>> force _ 'move_2 {} {}."), // 3
+        go(3, " >>> force _ 'move_3 {} {}."), // 3
+    go(1, " >>> force _ 'deal-cards_1 {} {}."), // 1
+    go(4, " >>> force _ 'choose-card_1 {} {Name: 'instruments}."), // 4
+      go(3, " >>> force _ 'move_4 {} {}."), // 3
+    () => "done",
   ];
   timeFn(() => ec.solve());
   let i = 0;
   for (let t of thelog) {
-    console.log("iter:", i++);
-    timeFn(t);
+    console.log("iter:", ++i);
+    if (timeFn(t) === "done") break; // early exit
   }
 
   /* finish */
@@ -299,16 +337,16 @@ function mainTest(stories, userRules) {
     "range",
   ];
   timeFn(() => ec.print(omit));
-  console.log("db.size: ", state.dbAggregates.size()); // 828 200ms
+  console.log("db.size: ", state.dbAggregates.size()); // 663 200
   console.log(state);
 }
 function timeFn(fn) {
   let t0 = performance.now();
-  fn();
+  let x = fn();
   let t1 = performance.now();
   let ms = t1 - t0;
   if (ms > 0) console.log("time: ", ms);
-  return ms;
+  return x;
 }
 
 function loadRules(fn) {
@@ -328,15 +366,14 @@ window.onload = () => loadRules(main);
 [x]spawn episode with local tuple, match (only immediate child for now)
 [x]branch
 [x]"@Type Token" feature. push
-[x]user datalog,
+[x]user datalog, SI board
+[x] subStory case
+[x] draft: randomize quantifier, test
 
-setup call to isolation, gather
-query *tuples hereditarily
-
-game board
-fully qualified force (name all paths)
-draft, activate, ravage
+activate power, ravage
 GOAL one approximate spirit island turn
+query *tuples hereditarily
+setup call to isolation, gather
 
 after rules (access locals of trigger)
 list long script examples
@@ -347,7 +384,7 @@ modify *tuples
 pain issues
   label numbering
   eval until choice
-    ? parse trail format
+  qualified force? parse trail format
   perf
 
 box [eq] method?

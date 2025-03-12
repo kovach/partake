@@ -1,6 +1,7 @@
 {turn1} game: ~turn [ *count 1].
 {setup} game:
   +player 'P,
+  +hand 'P H,
   +dahan D,
   +located D -> 1,
   .
@@ -24,15 +25,21 @@
 
 spirit-phase:
   player P,
-  ~choose-cards
+  ~do-growth
     [ *player P ].
 
-choose-cards:
-  *player P,
-  choose 1 (
-    card C, name C Name,
+do-growth:
+  ~deal-cards [ *player .*player ].
+
+deal-cards: *player P,
+  ( choose (random 4) (
     located C -> .deck
-  ), ~move [ *it Id, *to P.choose-area ].
+    ), ~move [ *it C, *to P.choose-area ] ),
+  ~choose-card [ *player P ].
+
+  choose-card: *player P,
+    choose 1 (located C -> P.choose-area, name C Name),
+    ~move [ *it C, *to P.hand ].
 
 ### Card Definitions
 
@@ -65,7 +72,7 @@ push:
   choose 1 (
     located T -> .*target,
     *type X, ^X T,
-    adjacent .*target L,
+    range .*target L -> 1,
   ),
   ~move [*it T, *to L].
 

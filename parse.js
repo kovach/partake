@@ -143,7 +143,8 @@ function dotExpandRuleBody(body) {
             ...p,
             value: p.value.map(({ id, body }) => ({ id, body: dotExpandRuleBody(body) })),
           };
-          throw "";
+        case "subStory":
+          return [{ tag: "subStory", story: dotExpandRuleBody(p.story) }];
         //case "retract": {
         //  let { prefix, query } = dotExpandQuery(p.query);
         //  return fix(prefix).concat([{ tag: "retract", query: query }]);
@@ -155,8 +156,6 @@ function dotExpandRuleBody(body) {
         //}
         //case "done":
         //  return [p];
-        //case "subbranch":
-        //  return [{ tag: "subbranch", branch: dotExpandRuleBody(p.branch) }];
         //case "binOp":
         //  let r1 = dotExpandTerm(p.l);
         //  let r2 = dotExpandTerm(p.r);

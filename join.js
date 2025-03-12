@@ -285,10 +285,12 @@ function ppQuantifier(quantifier) {
   switch (quantifier.tag) {
     case "eq":
       return `${quantifier.count}`;
-    case "limit":
-      return `max ${quantifier.count}`;
-    case "amapLimit":
-      return `~${quantifier.count}`;
+    case "random":
+      return `(random ${quantifier.count})`;
+    //case "limit":
+    //  return `max ${quantifier.count}`;
+    //case "amapLimit":
+    //  return `~${quantifier.count}`;
   }
 }
 function ppQuery(ps) {
@@ -329,6 +331,9 @@ function ppEpisode(e) {
         .map(({ id, body: e }) => "( " + id + ": " + ppRuleBody(e) + ")")
         .join(" ");
       return `branch (${i})`;
+    }
+    case "subStory": {
+      return `(${ppRuleBody(e.story)})`;
     }
     default:
       throw "";

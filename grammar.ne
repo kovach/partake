@@ -82,8 +82,9 @@ derivation_block -> (_ _derivation):* _ {% (d) => d[0].map((r) => r[1]) %}
 ## section: rules
 #
 quantifier -> number {% (d) => ({tag: 'eq', count: d[0]}) %}
-quantifier -> "~" _ number {% (d) => ({tag: 'amapLimit', count: d[2]}) %}
-quantifier -> "max" _ number {% (d) => ({tag: 'limit', count: d[2]}) %}
+quantifier -> op "random" _ number cp {% (d) => ({tag: 'random', count: d[3]}) %}
+#quantifier -> "~" _ number {% (d) => ({tag: 'amapLimit', count: d[2]}) %}
+#quantifier -> "max" _ number {% (d) => ({tag: 'limit', count: d[2]}) %}
 
 event_expr -> identifier {% (d) => ({ tag: "literal", name: d[0]}) %}
 event_expr -> identifier _ "[" _ pure_query _ "]" {% (d) => ({ tag: "with-tuples", name: d[0], tuples: d[4]}) %}
@@ -100,6 +101,7 @@ episode_expr -> "+" relation {% (d) => [{tag: "assert", tuple: d[1] }] %}
 episode_expr -> "choose" __ quantifier __ op pure_query cp {% (d) => [{ tag: "choose", quantifier: d[2], value: {query: d[5]} }] %}
 episode_expr -> "branch" _ "(" (_ op branch_option cp):* cp
   {% (d) => [{ tag: "branch", value: d[3].map((d) => d[2]) }] %}
+episode_expr -> op rule_body cp {% (d) => [{tag: "subStory", story: d[1] }] %}
 
 #episode_expr -> "-" _ pure_query {% (d) => [{tag: "retract", query: d[2] }] %}
 #episode_expr -> op pure_query cp _ "=>" _ op pure_query cp {% (d) => [{ tag: "modification", before: d[1], after: d[7] }] %}
@@ -114,7 +116,6 @@ episode_expr -> "branch" _ "(" (_ op branch_option cp):* cp
 #  {% (d) => [{tag: 'binOp', operator: d[2], l: d[0], r: d[4]}] %}
 #episode_expr -> "!done" {% () => [{tag: "done"}] %}
 #episode_expr -> "!do" __ event_expr {% (d) => [{tag: "do", value: d[2]}] %}
-#episode_expr -> op rule_body cp {% (d) => [{tag: "subbranch", branch: d[1] }] %}
 
 episode_list -> episode_expr (_ ","):? {% (d) => d[0] %}
 episode_list -> episode_expr comma episode_list {% (d) => d[0].concat(d[2]) %}

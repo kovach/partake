@@ -9,7 +9,7 @@ function randNat(n) {
 }
 function randomSample(array, count) {
   let n = array.length;
-  assert(n >= count);
+  count = Math.min(n, count);
   array = [...array];
   for (let i = 0; i < count; i++) {
     let j = randRange(i, n - 1);
