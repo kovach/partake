@@ -1,14 +1,9 @@
 {turn1} game: ~turn [ *count 1].
 {setup} game:
   +player 'P,
-  +land 1,
-  +land 2,
-  +adjacent 1 2,
   +dahan D,
   +located D -> 1,
   .
-
-# todo range rules
 
 {deal} game:
   +deck D,

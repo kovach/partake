@@ -194,13 +194,14 @@ let updateBranch = (ec, parent, id, bind, story, choice) => {
   }
 };
 
-function mainTest(stories) {
+function mainTest(stories, userRules) {
   let relTypes = {
     delay: "max",
     "next-delay": "min",
     steps: "num",
     forceSteps: "num",
     located: "last",
+    range: "min",
   };
   let derivations = parseRules(mainProgram);
 
@@ -247,7 +248,7 @@ function mainTest(stories) {
   let go = (n, x) => () => range(n).map((_i) => ec.addRules(parseRules(x)));
 
   /* setup */
-  let ec = mkSeminaive(derivations, js, relTypes);
+  let ec = mkSeminaive([...derivations, ...userRules], js, relTypes);
   //let executionContext = setupState(derivations, js, relTypes);
   ec.init();
   let state = ec.getState();
@@ -256,14 +257,14 @@ function mainTest(stories) {
 
   /* execute log of actions */
   let thelog = [
-    go(6, " >>> force _ 'setup_1 {}."), // 6
+    go(3, " >>> force _ 'setup_1 {}."), // 6
     go(5, " >>> force _ 'deal_1 {}."), // 5
     go(5, " >>> force _ 'mk-card_1 {}."), // 5
     go(5, " >>> force _ 'mk-card_2 {}."), // 5
 
     // test push
     go(1, " >>> force _ 'foo_1 {}."), // 1
-    go(2, " >>> force _ 'push_1 {}."), // 2
+    go(3, " >>> force _ 'push_1 {} {L:2}."), // 2
     go(3, " >>> force _ 'move_1 {}."), //
 
     go(1, " >>> force _ 'turn1_1 {}."), // 1
@@ -292,9 +293,13 @@ function mainTest(stories) {
     "force",
     "succeeds",
     "body",
+
+    "land",
+    "adjacent",
+    "range",
   ];
   timeFn(() => ec.print(omit));
-  console.log("db.size: ", state.dbAggregates.size()); // 740 200ms
+  console.log("db.size: ", state.dbAggregates.size()); // 828 200ms
   console.log(state);
 }
 function timeFn(fn) {
@@ -307,13 +312,13 @@ function timeFn(fn) {
 }
 
 function loadRules(fn) {
-  fetch("si3.mm")
-    .then((res) => res.text())
-    .then((text) => fn(parseProgram(text)));
+  Promise.all([fetch("si3.mm"), fetch("si3.sad")])
+    .then((res) => Promise.all(res.map((p) => p.text())))
+    .then(([t1, t2]) => fn(parseProgram(t1), parseRules(t2)));
 }
 
-function main(stories) {
-  timeFn(() => mainTest(stories));
+function main(stories, rules) {
+  timeFn(() => mainTest(stories, rules));
 }
 
 window.onload = () => loadRules(main);
@@ -323,11 +328,12 @@ window.onload = () => loadRules(main);
 [x]spawn episode with local tuple, match (only immediate child for now)
 [x]branch
 [x]"@Type Token" feature. push
+[x]user datalog,
 
 setup call to isolation, gather
 query *tuples hereditarily
 
-user datalog, game board
+game board
 fully qualified force (name all paths)
 draft, activate, ravage
 GOAL one approximate spirit island turn

@@ -1,0 +1,22 @@
+# Board C
+-------------------
+land 1, land 2, land 3, land 4,
+land 5, land 6, land 7, land 8,
+
+adjacent-land 1 2, adjacent-land 1 5, adjacent-land 1 6,
+adjacent-land 2 3, adjacent-land 2 4, adjacent-land 2 5,
+adjacent-land 3 4, adjacent-land 4 5, adjacent-land 4 7,
+adjacent-land 5 6, adjacent-land 5 7,
+adjacent-land 6 7, adjacent-land 6 8,
+adjacent-land 7 8.
+
+adjacent-land A B --- adjacent A B.
+adjacent-land A B --- adjacent B A.
+
+land A
+------
+range A A -> 0.
+
+range A B -> D, adjacent B C
+----------------------
+range A C -> @add(D, 1).
