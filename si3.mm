@@ -15,7 +15,12 @@
   .
 
 {foo} game:
-  ~push [ *target 1, *type 'dahan ].
+  ~push [ *target 1, *type 'dahan ],
+  branch (
+    (a: ~a)
+    (b: ~b)
+  ),
+  .
 
 {turn} turn:
   ~spirit-phase,
