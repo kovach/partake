@@ -7,7 +7,8 @@
 
   player P,
   +hand P H,
-  +card-plays P -> 2,
+  +card-plays P -> 1,
+  ~place-presence [ *player P],
   .
 
 {deal} game:
@@ -54,6 +55,7 @@ deal-cards: *player P,
     choose 1 (
       located C -> P.choose-area,
       card-name C Name),
+    +owner C -> P,
     ~move [ *it C, *to P.hand ].
 
 play-cards: *player P,
@@ -74,21 +76,23 @@ play-cards: *player P,
 
 # Call to Isolation
 {target-call} target-power: *power P,
-  card-name P 'call-to-isolation,
+  owner P -> Player,
+  card-name P 'call,
   choose 1 (
-    player-land .player Land,
-    range Land 1 T,
-    located .dahan T ),
-  ~activate-power [ *target T ].
+    player-land Player Land,
+    range Land T -> 1,
+    located .dahan -> T,
+  ),
+  ~activate-power [ *power P, *target T ].
 
 
 {activate-call} activate-power: *power P,
-  card-name P 'call-to-isolation,
+  card-name P 'call,
   branch (
     ( push-invaders:
       located .dahan .target,
       ~push [ *type 'explorer, *type 'town ])
-    ( push-dahan: ~push [ *type 'dahan ] )
+    ( push-dahan: ~push [ *target .*target, *type 'dahan ] )
   ).
 
 ### Core Actions
@@ -96,6 +100,11 @@ play-cards: *player P,
 move:
   *it I, *to T,
   +located I -> T.
+
+place-presence: *player P,
+  choose 1 (land L),
+  +presence Token P,
+  +located Token -> L.
 
 push:
   choose 1 (

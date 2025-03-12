@@ -20,3 +20,7 @@ range A A -> 0.
 range A B -> D, adjacent B C
 ----------------------
 range A C -> @add(D, 1).
+
+presence x P, located x -> Land
+-------
+player-land P Land.

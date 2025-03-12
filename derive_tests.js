@@ -232,6 +232,7 @@ let updateBranch = (ec, parent, id, label, bind, story, choice) => {
 function mainTest(stories, userRules) {
   let relTypes = {
     located: "last",
+    owner: "last",
 
     delay: "max",
     "next-delay": "min",
@@ -296,13 +297,14 @@ function mainTest(stories, userRules) {
   /* Execute log of actions */
   // prettier-ignore
   let thelog = [
-    go(7, " >>> force _ 'setup {}."), // 7
+    go(8, " >>> force _ 'setup {}."), // 8
+      go(4, " >>> force _ 'place-presence {} {L: 1}."), //
     go(5, " >>> force _ 'deal {}."), // 5
       go(5, " >>> force _ 'mk-card {}."), // 5
 
     // test misc.
     go(2, " >>> force _ 'foo {}."), // 2
-      go(3, " >>> force _ 'push {} {L:2}."), // 3
+      go(2, " >>> force _ 'push {} {L:2}."), // 2
       go(3, " >>> force _ 'move {}."), // 3
       go(1, " >>> force _ 'foo/a {}."), // 1
       go(1, " >>> force _ 'foo/b {}."), // 1
@@ -316,16 +318,21 @@ function mainTest(stories, userRules) {
           go(3, " >>> force _ 'deal-cards/1 {} {}."), // 3
             go(3, " >>> force _ 'move {} {}."), // 3
         go(1, " >>> force _ 'deal-cards {} {}."), // 1
-        go(4, " >>> force _ 'choose-card {} {Name: 'call}."), // 4
+        go(5, " >>> force _ 'choose-card {} {Name: 'call}."), //
           go(3, " >>> force _ 'move {} {}."), // 3
     go(1, " >>> force _ 'spirit-phase {}."), // 2
       go(9, " >>> force _ 'play-cards {}."), // 9
         go(3, " >>> force _ 'move {} {}."), // 3
       go(1, " >>> force _ 'play-cards {}."), // 1
       go(1, " >>> terminate _ 'play-cards."), // 1
-    () => "done",
-    go(0, " >>> force _ 'turn {}."),
-    go(0, " >>> force _ 'power-phase {}."), // 2
+    go(1, " >>> force _ 'turn {}."),
+    go(4, " >>> force _ 'power-phase {}."), // 4
+      go(5, " >>> force _ 'target-call {} {Land: 1}."), // 5
+        go(3, " >>> force _ 'activate-call {} {}."), //
+        go(1, " >>> terminate _ 'activate-call/push-invaders."), //
+        go(2, " >>> force _ 'activate-call/push-dahan {} {}."), //
+          go(2, " >>> force _ 'push {} {L:4}."), //
+            go(3, " >>> force _ 'move {}."), // 3
   ];
   timeFn(() => ec.solve());
   let i = 0;
@@ -351,12 +358,13 @@ function mainTest(stories, userRules) {
 
     "land",
     "adjacent",
+    "adjacent-land",
     "range",
 
     "rule",
   ];
   timeFn(() => ec.print(omit));
-  console.log("db.size: ", state.dbAggregates.size()); // 941 350
+  console.log("db.size: ", state.dbAggregates.size()); // 1186 450
   console.log(state);
 }
 function timeFn(fn) {
@@ -388,13 +396,13 @@ window.onload = () => loadRules(main);
 [x]user datalog, SI board
 [x] subStory case
 [x] draft: randomize quantifier, test
+[x] play-cards: pay for cards
+[x] activate power, activate: choose target, activate
 
-activate power,
-  play-cards: pay for cards
-  activate: choose target, activate
-ravage
-GOAL one approximate spirit island turn
 query *tuples hereditarily
+ravage
+grow: presence
+GOAL one approximate spirit island turn
 setup call to isolation, gather
 
 after rules (access locals of trigger)
@@ -404,6 +412,7 @@ quantifier
 modify *tuples
 
 pain issues
+  query *tuples hereditarily
   eval until choice
   label numbering
   qualified force? parse trail format
