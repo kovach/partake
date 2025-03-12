@@ -35,7 +35,7 @@ function parseRules(text) {
 function mkNode(state, tag) {
   let id = freshId();
   addTuple(state, ["node", id]);
-  addTuple(state, ["id-tag", id, tag]);
+  addTuple(state, ["node-tag", id, tag]);
   return id;
 }
 function mkChildNode(state, tag, parent) {
@@ -86,7 +86,7 @@ node I, body I _ S, @lt 0 @length(S), old I -> 0 --- tip I.
 
 ######### Rule Activation
 
-id-tag I T, rule name T 'during Body, @initBranch name Body L
+node-tag I T, rule name T 'during Body, @initBranch name Body L
 >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 node I', contains I I', body I' {} Body, label I' L.
 
@@ -291,8 +291,7 @@ function mainTest(stories, userRules) {
   let thelog = [
     go(4, " >>> force _ 'setup {}."), // 4
     go(5, " >>> force _ 'deal {}."), // 5
-    go(5, " >>> force _ 'mk-card {}."), // 5
-    go(5, " >>> force _ 'mk-card {}."), // 5
+      go(5, " >>> force _ 'mk-card {}."), // 5
 
     // test push. remove
     go(2, " >>> force _ 'foo {}."), // 2
@@ -308,9 +307,8 @@ function mainTest(stories, userRules) {
     go(2, " >>> force _ 'deal-cards {} {}."), // 2
       go(3, " >>> force _ 'deal-cards/1 {} {}."), // 3
         go(3, " >>> force _ 'move {} {}."), // 3
-        go(3, " >>> force _ 'move {} {}."), // 3
     go(1, " >>> force _ 'deal-cards {} {}."), // 1
-    go(4, " >>> force _ 'choose-card {} {Name: 'instruments}."), // 4
+    go(4, " >>> force _ 'choose-card {} {Name: 'call}."), // 4
       go(3, " >>> force _ 'move {} {}."), // 3
     () => "done",
   ];
@@ -333,13 +331,17 @@ function mainTest(stories, userRules) {
     "force",
     "succeeds",
     "body",
+    "node-tag",
+    "label",
 
     "land",
     "adjacent",
     "range",
+
+    "rule",
   ];
   timeFn(() => ec.print(omit));
-  console.log("db.size: ", state.dbAggregates.size()); // 703 230
+  console.log("db.size: ", state.dbAggregates.size()); // 690 230
   console.log(state);
 }
 function timeFn(fn) {
@@ -384,8 +386,8 @@ quantifier
 modify *tuples
 
 pain issues
-  label numbering
   eval until choice
+  label numbering
   qualified force? parse trail format
   perf
 

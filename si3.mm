@@ -9,23 +9,20 @@
 {deal} game:
   +deck D,
   ~mk-card [ *name 'instruments ],
-  ~mk-card [ *name 'call-to-isolation ],
+  ~mk-card [ *name 'call ],
   player P,
   +choose-area P _,
   .
 
 {foo} game:
   ~push [ *target 1, *type 'dahan ],
-  branch (
-    (a: ~a)
-    (b: ~b)
-  ),
+  branch ( (a: ~a) (b: ~b) ),
   .
 
 {turn} turn:
   ~spirit-phase,
+  ~power-phase,
   ~invader-phase,
-  ~slow-phase,
   ~time-passes.
 
 spirit-phase:
@@ -43,14 +40,16 @@ deal-cards: *player P,
   ~choose-card [ *player P ].
 
   choose-card: *player P,
-    choose 1 (located C -> P.choose-area, name C Name),
+    choose 1 (
+      located C -> P.choose-area,
+      card-name C Name),
     ~move [ *it C, *to P.hand ].
 
 ### Card Definitions
 
 # Call to Isolation
 {target-call} target-power: *power P,
-  name P 'call-to-isolation,
+  card-name P 'call-to-isolation,
   choose 1 (
     player-land .player Land,
     range Land 1 T,
@@ -59,7 +58,7 @@ deal-cards: *player P,
 
 
 {activate-call} activate-power: *power P,
-  name P 'call-to-isolation,
+  card-name P 'call-to-isolation,
   branch (
     ( push-invaders:
       located .dahan .target,
@@ -82,8 +81,8 @@ push:
   ~move [*it T, *to L].
 
 ### Utilities
-mk-card:
+mk-card: *name N,
   +card C,
-  +name C .*name,
+  +card-name C N,
   +located C -> .deck.
 
