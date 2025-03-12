@@ -124,19 +124,9 @@ function dotExpandRuleBody(body) {
           let { prefix, relation } = dotExpandRelation(p.pattern);
           return fix(prefix).concat([{ tag: "observation", pattern: relation }]);
         }
-        // todo retract
-        case "retract": {
-          let { prefix, query } = dotExpandQuery(p.query);
-          return fix(prefix).concat([{ tag: "retract", query: query }]);
-        }
         case "assert": {
           let { prefix, relation } = dotExpandRelation(p.tuple);
           return fix(prefix).concat([{ tag: "assert", tuple: relation }]);
-        }
-        case "subquery": {
-          let { name } = p;
-          let { prefix, query } = dotExpandQuery(p.query);
-          return [{ tag: "subquery", name, query: prefix.concat(query) }];
         }
         case "choose":
           let {
@@ -148,16 +138,31 @@ function dotExpandRuleBody(body) {
           let { prefix, episode } = dotExpandEpisode(p.value);
           return fix(prefix).concat([{ tag: "do", value: episode }]);
         }
-        case "done":
-          return [p];
-        case "subbranch":
-          return [{ tag: "subbranch", branch: dotExpandRuleBody(p.branch) }];
-        case "binOp":
-          let r1 = dotExpandTerm(p.l);
-          let r2 = dotExpandTerm(p.r);
-          return fix(r1.prefix.concat(r2.prefix)).concat([
-            { ...p, l: r1.term, r: r2.term },
-          ]);
+        case "branch":
+          return {
+            ...p,
+            value: p.value.map(({ id, body }) => ({ id, body: dotExpandRuleBody(body) })),
+          };
+          throw "";
+        //case "retract": {
+        //  let { prefix, query } = dotExpandQuery(p.query);
+        //  return fix(prefix).concat([{ tag: "retract", query: query }]);
+        //}
+        //case "subquery": {
+        //  let { name } = p;
+        //  let { prefix, query } = dotExpandQuery(p.query);
+        //  return [{ tag: "subquery", name, query: prefix.concat(query) }];
+        //}
+        //case "done":
+        //  return [p];
+        //case "subbranch":
+        //  return [{ tag: "subbranch", branch: dotExpandRuleBody(p.branch) }];
+        //case "binOp":
+        //  let r1 = dotExpandTerm(p.l);
+        //  let r2 = dotExpandTerm(p.r);
+        //  return fix(r1.prefix.concat(r2.prefix)).concat([
+        //    { ...p, l: r1.term, r: r2.term },
+        //  ]);
         default:
           throw "";
       }
@@ -175,8 +180,13 @@ function parseProgram(text) {
     return dotExpandRuleBody(appendDone(body));
   }
   // filter comments. todo: lexer
-  let removeCommentFromLine = (s) => /[^#]*/.exec(s);
-  text = text.split("\n").map(removeCommentFromLine).join("\n");
+  function fixLines(lines) {
+    let removeCommentFromLine = (s) => /[^#]*/.exec(s)[0];
+    lines = lines.map(removeCommentFromLine);
+    lines = takeWhile(lines, (line) => line !== "exit.");
+    return lines;
+  }
+  text = fixLines(text.split("\n")).join("\n");
   let exprs = parseNonterminal("program", text);
   let program = {
     before: new ArrayMap(),
@@ -197,6 +207,15 @@ function parseProgram(text) {
     program[type].add(predicate, { id, body });
   }
   return program;
+}
+
+function takeWhile(arr, p) {
+  let result = [];
+  for (let i = 0; i < arr.length; i++) {
+    if (p(arr[i])) result.push(arr[i]);
+    else break;
+  }
+  return result;
 }
 
 export { dotExpandQuery, parseNonterminal, parseProgram };

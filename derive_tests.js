@@ -33,7 +33,8 @@ function parseRules(text) {
 
 function mkNode(state, tag) {
   let id = freshId();
-  addTuple(state, ["node", tag, id]);
+  addTuple(state, ["node", id]);
+  addTuple(state, ["id-tag", id, tag]);
   return id;
 }
 function mkChildNode(state, tag, parent) {
@@ -50,6 +51,16 @@ let single =
   (...args) =>
     tr([fn(...args)]);
 
+function loadRuleTuples(state, stories) {
+  for (let [type, ruleGroup] of Object.entries(stories)) {
+    for (let [trigger, rules] of ruleGroup.map.entries()) {
+      for (let { id, body } of rules) {
+        //console.log("rule: ", id, type, trigger, body);
+        addTuple(state, ["rule", mkSym(id), mkSym(trigger), mkSym(type), mkBox(body)]);
+      }
+    }
+  }
+}
 const mainProgram = `
 node _ id --- node id.
 node '_branch id --- is-branch id.
@@ -75,9 +86,9 @@ node I, body I _ S, @lt 0 @length(S), old I -> 0 --- tip I.
 
 ######### Rule Activation
 
-node T I, rule name T 'during Body, @initBranch name Body L _ _
+id-tag I T, rule name T 'during Body, @initBranch name Body L
 >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-node '_branch I', contains I I', body I' {} Body, label I' L.
+node I', contains I I', body I' {} Body, label I' L.
 
 ######### Branch Update
 
@@ -101,17 +112,7 @@ let branchCounters = new MonoidMap(
 );
 function initBranch(name, body) {
   let { count } = branchCounters.add(name.value, 1);
-  return [name, body, mkSym(name.value + "_" + count), mkBind(emptyBinding()), body];
-}
-function loadRuleTuples(state, stories) {
-  for (let [type, ruleGroup] of Object.entries(stories)) {
-    for (let [trigger, rules] of ruleGroup.map.entries()) {
-      for (let { id, body } of rules) {
-        //console.log("rule: ", id, type, trigger, body);
-        addTuple(state, ["rule", mkSym(id), mkSym(trigger), mkSym(type), mkBox(body)]);
-      }
-    }
-  }
+  return [name, body, mkSym(name.value + "_" + count)];
 }
 
 let _true = mkInt(1);
@@ -177,6 +178,15 @@ let updateBranch = (ec, parent, id, bind, story, choice) => {
         return [mkCurrent(binding, [newOp, ...rest])];
       }
     }
+    case "branch":
+      op.value.forEach(({ id: _id, body }) => {
+        let id = freshId();
+        addTuple(state, ["node", id]);
+        addTuple(state, ["body", id, mkBind(emptyBinding()), mkBox(body)]);
+        addTuple(state, ["label", id, mkSym(_id)]);
+        addTuple(state, ["contains", parent, id]);
+      });
+      return [mkRest(binding)];
     default:
       throw "";
   }
@@ -244,17 +254,18 @@ function mainTest(stories) {
 
   /* execute log of actions */
   let thelog = [
+    go(1, " >>> force _ 'foo_1 {}."), // 1
+    go(1, " >>> force _ 'a {}."), // 1
+    go(4, " >>> force _ 'setup_1 {}."), // 4
     go(1, " >>> force _ 'turn1_1 {}."), // 1
-    go(2, " >>> force _ 'setup_1 {}."), // 2
     go(5, " >>> force _ 'deal_1 {}."), // 5
     go(5, " >>> force _ 'mk-card_1 {}."), // 5
     go(5, " >>> force _ 'mk-card_2 {}."), // 5
     go(1, " >>> force _ 'turn_1 {}."), // 6
     go(2, " >>> force _ 'spirit-phase_1 {}."), // 2
-    go(1, " >>> force _ 'choose-cards_1 {} {Name: 'act}."), // 5
-    go(4, " >>> force _ 'choose-cards_1 {P: 'P} {Name: 'act}."),
+    go(1, " >>> force _ 'choose-cards_1 {} {}."), // 5
+    go(4, " >>> force _ 'choose-cards_1 {P: 'P} {Name: 'instruments}."),
     go(3, " >>> force _ 'move_1 {} {}."), // 3
-    //go(3, " >>> force _ 'choose-cards_2 {} {C: 'run}."), // 3
   ];
   timeFn(() => ec.solve());
   let i = 0;
@@ -277,7 +288,7 @@ function mainTest(stories) {
     "succeeds",
   ];
   timeFn(() => ec.print(omit));
-  console.log("db.size: ", state.dbAggregates.size()); // 650 ~ 200ms
+  console.log("db.size: ", state.dbAggregates.size()); // 640 215ms
   console.log(state);
 }
 function timeFn(fn) {
@@ -303,19 +314,18 @@ window.onload = () => loadRules(main);
 
 /*
 ! [kinda] assertion
-[x]split bindings,
-[x]negation, define tips
-[x]partial guard rule
-[x]name node by binding
-[x] force by binding
-[x]eval choices, decide by binding
-[x] basic GOAL
 [x]spawn episode with local tuple, match (only immediate child for now)
+[x]branch
+query *tuples hereditarily
+fully qualified force (name all paths)
 user datalog
-a long script
+goal: spirit island chunk
+
+after rules (access locals of trigger)
 list long script examples
 temporal pattern
 quantifier
+modify *tuples
 
 pain issues
   label numbering
@@ -330,5 +340,5 @@ revive old unit tests
 ? enrich patterns with relationType/js content
 query live db interface
 save derivation traces for regression tests
-? delete tuple in >>>
+delete tuples with >>>
 */

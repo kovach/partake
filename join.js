@@ -291,6 +291,9 @@ function ppQuantifier(quantifier) {
 function ppQuery(ps) {
   return ps.map(({ tag, terms }) => [tag].concat(terms.map(ppTerm)).join(" ")).join(", ");
 }
+function ppRuleBody(b) {
+  return b.map(ppEpisode);
+}
 function ppEpisode(e) {
   switch (e.tag) {
     case "observation": {
@@ -317,6 +320,12 @@ function ppEpisode(e) {
     case "assert": {
       let { tuple } = e;
       return `+${ppQuery([tuple])}`;
+    }
+    case "branch": {
+      let i = e.value
+        .map(({ id, body: e }) => "( " + id + ": " + ppRuleBody(e) + ")")
+        .join(" ");
+      return `branch (${i})`;
     }
     default:
       throw "";

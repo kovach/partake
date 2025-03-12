@@ -90,11 +90,14 @@ event_expr -> identifier _ "[" _ pure_query _ "]" {% (d) => ({ tag: "with-tuples
 #event_expr -> op event_expr _ "->" _ event_expr cp {% (d) => ({ tag: "sequence", a: d[1], b: d[5]}) %}
 #event_expr -> "[" _ event_expr _ "|" _ pure_query _ "]" {% (d) => ({ tag: "with-tuples", body: d[2], tuples: d[6]}) %}
 
+branch_option -> identifier _ ":" _ rule_body {% (d) => ({id:d[0], body: d[4]}) %}
+
 episode_expr -> "~" event_expr {% (d) => [{tag: "do", value: d[1]}] %}
 episode_expr -> relation {% (d) => [{ tag: "observation", pattern: d[0]}] %}
 episode_expr -> "+" relation {% (d) => [{tag: "assert", tuple: d[1] }] %}
-episode_expr -> "choose" __ quantifier __ op pure_query cp
-  {% (d) => [{ tag: "choose", quantifier: d[2], value: {query: d[5]} }] %}
+episode_expr -> "choose" __ quantifier __ op pure_query cp {% (d) => [{ tag: "choose", quantifier: d[2], value: {query: d[5]} }] %}
+episode_expr -> "branch" _ "(" (_ op branch_option cp):* cp
+  {% (d) => [{ tag: "branch", value: d[3].map((d) => d[2]) }] %}
 
 #episode_expr -> "-" _ pure_query {% (d) => [{tag: "retract", query: d[2] }] %}
 #episode_expr -> op pure_query cp _ "=>" _ op pure_query cp {% (d) => [{ tag: "modification", before: d[1], after: d[7] }] %}
