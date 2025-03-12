@@ -14,7 +14,7 @@ let ParserRules = [
     {"name": "number$ebnf$1", "symbols": ["number$ebnf$1", /[0-9]/], "postprocess": function arrpush(d) {return d[0].concat([d[1]]);}},
     {"name": "number", "symbols": ["number$ebnf$1"], "postprocess": d => parseInt(d[0].join(""))},
     {"name": "identifier$ebnf$1", "symbols": []},
-    {"name": "identifier$ebnf$1", "symbols": ["identifier$ebnf$1", /[a-zA-Z0-9'_-]/], "postprocess": function arrpush(d) {return d[0].concat([d[1]]);}},
+    {"name": "identifier$ebnf$1", "symbols": ["identifier$ebnf$1", /[\/'_\-a-zA-Z0-9]/], "postprocess": function arrpush(d) {return d[0].concat([d[1]]);}},
     {"name": "identifier", "symbols": [/[a-zA-Z_]/, "identifier$ebnf$1"], "postprocess": (d) => d[0] + d[1].join("")},
     {"name": "var", "symbols": ["identifier"], "postprocess": id},
     {"name": "predicate", "symbols": [{"literal":"!"}, "identifier"], "postprocess": (d) => ("!"+d[1])},

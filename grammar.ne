@@ -9,8 +9,9 @@ cp -> _ ")" {% () => null %}
 
 number -> [0-9]:+ {% d => parseInt(d[0].join("")) %}
 
-# a2-bc'
-identifier -> [a-zA-Z_] [a-zA-Z0-9'_-]:*  {% (d) => d[0] + d[1].join("") %}
+# a2-b_c/2'
+# allowed special characters: /'_-
+identifier -> [a-zA-Z_] [\/'_\-a-zA-Z0-9]:*  {% (d) => d[0] + d[1].join("") %}
 # _var, Var
 var -> identifier {% id %}
 

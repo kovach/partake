@@ -113,10 +113,12 @@ let branchCounters = new MonoidMap(
 );
 function initBranch(name, body) {
   let { count } = branchCounters.add(name.value, 1);
-  return [name, body, mkSym(name.value + "_" + count)];
+  return [name, body, mkSym(name.value)];
+  //return [name, body, mkSym(name.value + "_" + count)];
 }
 
 let _true = mkInt(1);
+let labelSep = "/";
 let updateBranch = (ec, parent, id, label, bind, story, choice) => {
   let state = ec.getState();
   let defs = ec.defs;
@@ -208,14 +210,14 @@ let updateBranch = (ec, parent, id, label, bind, story, choice) => {
       // one successor per option + 1 for the rest of the rule
       return [
         ...op.value.map(({ id: _id, body }) => {
-          return mk(mkSym(label.value + "_" + _id), binding, body);
+          return mk(mkSym(label.value + labelSep + _id), binding, body);
         }),
         mkRest(binding),
       ];
     // todo: desugar this to `branch`
     case "subStory":
       return [
-        mk({ ...label, value: label.value + "_sub" }, binding, op.story),
+        mk({ ...label, value: label.value + labelSep + "1" }, binding, op.story),
         mkRest(binding),
       ];
       throw "";
@@ -287,29 +289,29 @@ function mainTest(stories, userRules) {
   /* Execute log of actions */
   // prettier-ignore
   let thelog = [
-    go(4, " >>> force _ 'setup_1 {}."), // 4
-    go(5, " >>> force _ 'deal_1 {}."), // 5
-    go(5, " >>> force _ 'mk-card_1 {}."), // 5
-    go(5, " >>> force _ 'mk-card_2 {}."), // 5
+    go(4, " >>> force _ 'setup {}."), // 4
+    go(5, " >>> force _ 'deal {}."), // 5
+    go(5, " >>> force _ 'mk-card {}."), // 5
+    go(5, " >>> force _ 'mk-card {}."), // 5
 
     // test push. remove
-    go(2, " >>> force _ 'foo_1 {}."), // 2
-      go(1, " >>> force _ 'foo_1_a {}."), // 1
-      go(1, " >>> force _ 'foo_1_b {}."), // 1
-    go(3, " >>> force _ 'push_1 {} {L:2}."), // 3
-    go(3, " >>> force _ 'move_1 {}."), // 3
+    go(2, " >>> force _ 'foo {}."), // 2
+      go(1, " >>> force _ 'foo/a {}."), // 1
+      go(1, " >>> force _ 'foo/b {}."), // 1
+    go(3, " >>> force _ 'push {} {L:2}."), // 3
+    go(3, " >>> force _ 'move {}."), // 3
 
-    go(1, " >>> force _ 'turn1_1 {}."), // 1
-    go(1, " >>> force _ 'turn_1 {}."), // 6
-    go(2, " >>> force _ 'spirit-phase_1 {}."), // 2
-    go(2, " >>> force _ 'do-growth_1 {}."), // 2
-    go(2, " >>> force _ 'deal-cards_1 {} {}."), // 2
-      go(3, " >>> force _ 'deal-cards_1_sub {} {}."), // 3
-        go(3, " >>> force _ 'move_2 {} {}."), // 3
-        go(3, " >>> force _ 'move_3 {} {}."), // 3
-    go(1, " >>> force _ 'deal-cards_1 {} {}."), // 1
-    go(4, " >>> force _ 'choose-card_1 {} {Name: 'instruments}."), // 4
-      go(3, " >>> force _ 'move_4 {} {}."), // 3
+    go(1, " >>> force _ 'turn1 {}."), // 1
+    go(1, " >>> force _ 'turn {}."), // 6
+    go(2, " >>> force _ 'spirit-phase {}."), // 2
+    go(2, " >>> force _ 'do-growth {}."), // 2
+    go(2, " >>> force _ 'deal-cards {} {}."), // 2
+      go(3, " >>> force _ 'deal-cards/1 {} {}."), // 3
+        go(3, " >>> force _ 'move {} {}."), // 3
+        go(3, " >>> force _ 'move {} {}."), // 3
+    go(1, " >>> force _ 'deal-cards {} {}."), // 1
+    go(4, " >>> force _ 'choose-card {} {Name: 'instruments}."), // 4
+      go(3, " >>> force _ 'move {} {}."), // 3
     () => "done",
   ];
   timeFn(() => ec.solve());
@@ -337,7 +339,7 @@ function mainTest(stories, userRules) {
     "range",
   ];
   timeFn(() => ec.print(omit));
-  console.log("db.size: ", state.dbAggregates.size()); // 703 200
+  console.log("db.size: ", state.dbAggregates.size()); // 703 230
   console.log(state);
 }
 function timeFn(fn) {
