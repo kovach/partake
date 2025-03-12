@@ -17,13 +17,11 @@ import {
   fixRules,
   evalQuery,
   substitute,
-  addTuple,
-  delTuple,
   core,
   weight,
   mkSeminaive,
   fixQuery,
-  addTupleWeight,
+  addAtom,
 } from "./derive.js";
 
 function parseRules(text) {
@@ -34,13 +32,13 @@ function parseRules(text) {
 
 function mkNode(state, tag) {
   let id = freshId();
-  addTuple(state, ["node", id]);
-  addTuple(state, ["node-tag", id, tag]);
+  addAtom(state, ["node", id]);
+  addAtom(state, ["node-tag", id, tag]);
   return id;
 }
 function mkChildNode(state, tag, parent) {
   let newId = mkNode(state, tag);
-  addTuple(state, ["contains", parent, newId]);
+  addAtom(state, ["contains", parent, newId]);
   return newId;
 }
 function tor(name, fn) {
@@ -57,7 +55,7 @@ function loadRuleTuples(state, stories) {
     for (let [trigger, rules] of ruleGroup.map.entries()) {
       for (let { id, body } of rules) {
         //console.log("rule: ", id, type, trigger, body);
-        addTuple(state, ["rule", mkSym(id), mkSym(trigger), mkSym(type), mkBox(body)]);
+        addAtom(state, ["rule", mkSym(id), mkSym(trigger), mkSym(type), mkBox(body)]);
       }
     }
   }
@@ -98,6 +96,11 @@ force x L B --- force x L B {}.
 body I B S, @le BindPattern B, @updateBranch P I L B S Choice L' B' S'
 >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 node I', body I' B' S', label I' L', succeeds I I', contains P I'.
+
+# prune this tip
+!terminate x L, label I L, tip I
+>>>
+succeeds I _.
 
 # Diagnostic
 tip I, label I L, body I B S, contains P I --- z P I L B S.
@@ -149,7 +152,7 @@ let updateBranch = (ec, parent, id, label, bind, story, choice) => {
       for (let { tag, terms } of tuples) {
         let tuple = [tag, newChild, ...core(terms)];
         tuple = substitute(defs.js, binding, tuple, true);
-        addTuple(state, tuple);
+        addAtom(state, tuple);
       }
       return [mkRest(binding)];
     case "observation": {
@@ -167,7 +170,7 @@ let updateBranch = (ec, parent, id, label, bind, story, choice) => {
       let pattern = [op.tuple.tag].concat(op.tuple.terms);
       binding = binding.clone();
       let tuple = substitute(defs.js, binding, pattern, true);
-      addTupleWeight(state, tuple);
+      addAtom(state, core(tuple), weight(tuple));
       return [mkRest(binding)];
     }
     case "choose": {
@@ -228,12 +231,16 @@ let updateBranch = (ec, parent, id, label, bind, story, choice) => {
 
 function mainTest(stories, userRules) {
   let relTypes = {
+    located: "last",
+
     delay: "max",
     "next-delay": "min",
+
     steps: "num",
     forceSteps: "num",
-    located: "last",
     range: "min",
+    energy: "num",
+    "card-plays": "num",
   };
   let derivations = parseRules(mainProgram);
 
@@ -276,7 +283,7 @@ function mainTest(stories, userRules) {
   let tup =
     (...args) =>
     () =>
-      addTuple(state, [...args]);
+      addAtom(state, [...args]);
   let go = (n, x) => () => range(n).map((_i) => ec.addRules(parseRules(x)));
 
   /* setup */
@@ -289,28 +296,36 @@ function mainTest(stories, userRules) {
   /* Execute log of actions */
   // prettier-ignore
   let thelog = [
-    go(4, " >>> force _ 'setup {}."), // 4
+    go(7, " >>> force _ 'setup {}."), // 7
     go(5, " >>> force _ 'deal {}."), // 5
       go(5, " >>> force _ 'mk-card {}."), // 5
 
-    // test push. remove
+    // test misc.
     go(2, " >>> force _ 'foo {}."), // 2
+      go(3, " >>> force _ 'push {} {L:2}."), // 3
+      go(3, " >>> force _ 'move {}."), // 3
       go(1, " >>> force _ 'foo/a {}."), // 1
       go(1, " >>> force _ 'foo/b {}."), // 1
-    go(3, " >>> force _ 'push {} {L:2}."), // 3
-    go(3, " >>> force _ 'move {}."), // 3
+    go(3, " >>> force _ 'foo {}."), // 2
 
-    go(1, " >>> force _ 'turn1 {}."), // 1
+    go(1, " >>> force _ 'turn1 {}."),
     go(1, " >>> force _ 'turn {}."), // 6
     go(2, " >>> force _ 'spirit-phase {}."), // 2
-    go(2, " >>> force _ 'do-growth {}."), // 2
-    go(2, " >>> force _ 'deal-cards {} {}."), // 2
-      go(3, " >>> force _ 'deal-cards/1 {} {}."), // 3
+      go(2, " >>> force _ 'spirit-grow {}."), // 2
+        go(2, " >>> force _ 'deal-cards {} {}."), // 2
+          go(3, " >>> force _ 'deal-cards/1 {} {}."), // 3
+            go(3, " >>> force _ 'move {} {}."), // 3
+        go(1, " >>> force _ 'deal-cards {} {}."), // 1
+        go(4, " >>> force _ 'choose-card {} {Name: 'call}."), // 4
+          go(3, " >>> force _ 'move {} {}."), // 3
+    go(1, " >>> force _ 'spirit-phase {}."), // 2
+      go(9, " >>> force _ 'play-cards {}."), // 9
         go(3, " >>> force _ 'move {} {}."), // 3
-    go(1, " >>> force _ 'deal-cards {} {}."), // 1
-    go(4, " >>> force _ 'choose-card {} {Name: 'call}."), // 4
-      go(3, " >>> force _ 'move {} {}."), // 3
+      go(1, " >>> force _ 'play-cards {}."), // 1
+      go(1, " >>> terminate _ 'play-cards."), // 1
     () => "done",
+    go(0, " >>> force _ 'turn {}."),
+    go(0, " >>> force _ 'power-phase {}."), // 2
   ];
   timeFn(() => ec.solve());
   let i = 0;
@@ -341,7 +356,7 @@ function mainTest(stories, userRules) {
     "rule",
   ];
   timeFn(() => ec.print(omit));
-  console.log("db.size: ", state.dbAggregates.size()); // 690 230
+  console.log("db.size: ", state.dbAggregates.size()); // 941 350
   console.log(state);
 }
 function timeFn(fn) {
@@ -374,7 +389,10 @@ window.onload = () => loadRules(main);
 [x] subStory case
 [x] draft: randomize quantifier, test
 
-activate power, ravage
+activate power,
+  play-cards: pay for cards
+  activate: choose target, activate
+ravage
 GOAL one approximate spirit island turn
 query *tuples hereditarily
 setup call to isolation, gather

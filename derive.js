@@ -13,6 +13,7 @@ import {
   mkBox,
   ppTerm,
   isSym,
+  Binding,
 } from "./join.js";
 import { assert, range, KeyedMap, ArrayMap, MonoidMap } from "./collections.js";
 import { dotExpandQuery } from "./parse.js";
@@ -77,7 +78,7 @@ function reductionOps(relationTypes, tag) {
     min: { type: mkInt, add: wrap(mkInt, Math.min), zero: mkInt(Infinity) },
     max: { type: mkInt, add: wrap(mkInt, Math.max), zero: mkInt(-Infinity) },
     num: { type: mkInt, add: wrap(mkInt, (a, b) => a + b), zero: mkInt(0) },
-    last: { type: mkBox, add: wrap(mkBox, (_a, b) => b), zero: mkBox(null) },
+    last: { type: mkBox, add: (_a, b) => b, zero: mkBox(null) },
   };
   let ty = reductionType(relationTypes, tag);
   assert(ty);
@@ -218,6 +219,7 @@ function emptyState() {
     dbAggregates: new DB(),
     addWorklist: [],
     delWorklist: [],
+    atomWorklist: [],
     init: true,
     dependencies: new ArrayMap(new KeyedMap(key)),
   };
@@ -282,6 +284,7 @@ function mkSeminaive(r, js, relationTypes) {
 
   let obj = {};
   obj.defs = { js, relationTypes };
+  obj.atoms = dbAtoms;
   obj.init = () => {
     assert(init, "call init once (todo fix)");
     if (init) {
@@ -290,10 +293,24 @@ function mkSeminaive(r, js, relationTypes) {
       state.init = false;
     }
   };
+  obj.query = (query, context = emptyBinding()) => {
+    return af(evalQuery({ db: dbAggregates, js, relationTypes }, query, [context]));
+  };
+  obj.hasWork = () => {
+    return (
+      state.addWorklist.length || state.delWorklist.length || state.atomWorklist.length
+    );
+  };
+  let _nullBinding = new Binding();
   obj.solve = () => {
     // Rules with LHS
-    while (state.addWorklist.length + state.delWorklist.length > 0) {
-      if (state.delWorklist.length > 0) {
+    while (obj.hasWork()) {
+      if (state.atomWorklist.length > 0) {
+        for (let a of state.atomWorklist) {
+          changeAtom(a, `${uniqueInt()}`, _nullBinding, mod.add);
+        }
+        state.atomWorklist = [];
+      } else if (state.delWorklist.length > 0) {
         let tuple = state.delWorklist.pop();
         log("pop del tuple: ", ppTuple(tuple), tuple);
         retractTuple(tuple);
@@ -527,18 +544,9 @@ function substitute(js, binding, terms, allowFresh = false) {
   return terms.map((v, i) => (i > 0 ? substituteTerm(js, binding, v, allowFresh) : v));
 }
 
-// External interface to add/remove boolean state tuples
-function addTuple(state, tuple) {
-  //console.log("extern add: ", tuple);
-  tuple = tuple.concat(mkInt(1));
-  state.addWorklist.push(tuple);
-}
-function addTupleWeight(state, tuple) {
-  state.addWorklist.push(tuple);
-}
-function delTuple(state, tuple) {
-  tuple = tuple.concat(mkInt(1));
-  state.delWorklist.push(tuple);
+// External interface to add/remove tuples
+function addAtom(state, c, w = mkInt(1)) {
+  state.atomWorklist.push([...c, w]);
 }
 
 export {
@@ -546,9 +554,7 @@ export {
   emptyState,
   evalQuery,
   substitute,
-  addTuple,
-  addTupleWeight,
-  delTuple,
+  addAtom,
   reductionType,
   core,
   weight,

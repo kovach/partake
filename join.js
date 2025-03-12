@@ -148,6 +148,9 @@ function evalTerm(js, binding, term) {
       return js[term.fn](...args);
     } else if (term.tag === "bind") {
       return term; // todo: handle variables. change representation?
+    } else if (term.tag === "neg") {
+      let { value } = evalTerm(js, binding, term.value);
+      return mkInt(-value);
     } else {
       assert(term.tag === "int" || term.tag === "sym");
       return term;
@@ -368,6 +371,8 @@ function ppTerm(term) {
             content.slice(0, cutoff) + `...${content.length - cutoff} chars omitted`;
         return `(box: ${content})`;
       }
+    case "neg":
+      return `(- ${ppTerm(term.value)})`;
     default:
       throw "todo";
   }

@@ -26,11 +26,15 @@ function dotExpandTerm(t) {
     case "sym":
     case "int":
       return { prefix: [], term: t };
+    case "neg": {
+      let { prefix, term } = dotExpandTerm(t.value);
+      return { prefix, term: { ...t, value: term } };
+    }
     case "call": {
       let { prefix, terms } = dotExpandTerms(t.args);
       return { prefix, term: { tag: "call", fn: t.fn, args: terms } };
     }
-    case "dot":
+    case "dot": {
       let { left, right } = t;
       //  .right case (left is null): generate a unary clause `right v`
       let prefix = [];
@@ -54,7 +58,8 @@ function dotExpandTerm(t) {
         term: v,
       };
 
-    //case "set":
+      //case "set":
+    }
     default:
       throw "";
   }

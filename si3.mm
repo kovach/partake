@@ -1,9 +1,13 @@
 {turn1} game: ~turn [ *count 1].
 {setup} game:
   +player 'P,
-  +hand 'P H,
   +dahan D,
   +located D -> 1,
+  +play-area _,
+
+  player P,
+  +hand P H,
+  +card-plays P -> 2,
   .
 
 {deal} game:
@@ -17,6 +21,8 @@
 {foo} game:
   ~push [ *target 1, *type 'dahan ],
   branch ( (a: ~a) (b: ~b) ),
+  player P,
+  +energy P -> 2,
   .
 
 {turn} turn:
@@ -25,12 +31,17 @@
   ~invader-phase,
   ~time-passes.
 
+power-phase:
+  choose 1 (located Card -> .play-area),
+  ~target-power [ *power Card ],
+  .
+
 spirit-phase:
   player P,
-  ~do-growth
-    [ *player P ].
+  ~spirit-grow [ *player P ],
+  ~play-cards [ *player P ].
 
-do-growth:
+spirit-grow:
   ~deal-cards [ *player .*player ].
 
 deal-cards: *player P,
@@ -44,6 +55,20 @@ deal-cards: *player P,
       located C -> P.choose-area,
       card-name C Name),
     ~move [ *it C, *to P.hand ].
+
+play-cards: *player P,
+  card-plays P -> CP,
+  @lt 0 CP,
+  energy P -> E,
+  choose 1 (
+    located Card -> P.hand,
+    card-cost Card Cost,
+    @le Cost E
+  ),
+  +energy P -> (- Cost),
+  +card-plays P -> (-1),
+  ~move [ *it Card, *to .play-area ],
+  ~play-cards.
 
 ### Card Definitions
 
@@ -86,3 +111,10 @@ mk-card: *name N,
   +card-name C N,
   +located C -> .deck.
 
+mk-card:
+  card-name C 'call,
+  +card-cost C 0.
+
+mk-card:
+  card-name C 'instruments,
+  +card-cost C 4.

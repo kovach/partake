@@ -41,6 +41,7 @@ binding_list -> null {% () => [] %}
 binding_list -> binding (comma binding_list):? {% (d) => [d[0], ...(d[1] ? d[1][1] : [])] %}
 binding_expr -> "{" _ binding_list _ "}" {% (d) => ({tag: 'preBind', value: d[2]}) %}
 
+term -> op _ "-" _ term cp {% (d) => ({tag: 'neg', value: d[4]}) %}
 term -> var {% (d) => ({tag: 'var', value: d[0]}) %}
 term -> [0-9]:+ {% (d) => ({tag: 'int', value: parseInt(d[0].join(""))}) %}
 term -> "'" identifier {% (d) => ({tag: 'sym', value: d[1]}) %}

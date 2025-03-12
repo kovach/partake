@@ -41,6 +41,7 @@ let ParserRules = [
     {"name": "binding_list$ebnf$1", "symbols": [], "postprocess": function(d) {return null;}},
     {"name": "binding_list", "symbols": ["binding", "binding_list$ebnf$1"], "postprocess": (d) => [d[0], ...(d[1] ? d[1][1] : [])]},
     {"name": "binding_expr", "symbols": [{"literal":"{"}, "_", "binding_list", "_", {"literal":"}"}], "postprocess": (d) => ({tag: 'preBind', value: d[2]})},
+    {"name": "term", "symbols": ["op", "_", {"literal":"-"}, "_", "term", "cp"], "postprocess": (d) => ({tag: 'neg', value: d[4]})},
     {"name": "term", "symbols": ["var"], "postprocess": (d) => ({tag: 'var', value: d[0]})},
     {"name": "term$ebnf$1", "symbols": [/[0-9]/]},
     {"name": "term$ebnf$1", "symbols": ["term$ebnf$1", /[0-9]/], "postprocess": function arrpush(d) {return d[0].concat([d[1]]);}},
