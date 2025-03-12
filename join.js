@@ -137,6 +137,9 @@ function isHole(term) {
 function isVar(term) {
   return !isLiteral(term) && !isHole(term);
 }
+function isSym(term) {
+  return term.tag === "sym";
+}
 
 function evalTerm(js, binding, term) {
   if (isLiteral(term)) {
@@ -428,6 +431,7 @@ export {
   isVar,
   isLiteral,
   isHole,
+  isSym,
   valEqual,
   evalTerm,
   emptyBinding,

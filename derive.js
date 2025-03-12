@@ -12,6 +12,7 @@ import {
   mkInt,
   mkBox,
   ppTerm,
+  isSym,
 } from "./join.js";
 import { assert, range, KeyedMap, ArrayMap, MonoidMap } from "./collections.js";
 import { dotExpandQuery } from "./parse.js";
@@ -95,7 +96,7 @@ function evalQuery(
   return query.reduce(joinBindings, context);
 
   // todo: need tag type abstraction
-  function* readDb(t, c, values) {
+  function* readDb(t, binding, values) {
     let marker = t[0];
     switch (marker) {
       case "@":
@@ -115,6 +116,13 @@ function evalQuery(
             } else {
             }
           }
+        }
+        break;
+      case "^":
+        let rel = binding.get(t.slice(1));
+        assert(isSym(rel));
+        for (let [[_t, ...vals], weight] of db.ofTag(rel.value)) {
+          yield [t, ...vals, weight];
         }
         break;
       default:
@@ -139,8 +147,8 @@ function evalQuery(
   function* joinBindings(context, pattern) {
     let tg = tag(pattern);
     let ts = terms(pattern);
-    for (let c of context) {
-      let values = ts.map((t) => evalTerm(js, c, t));
+    for (let binding of context) {
+      let values = ts.map((t) => evalTerm(js, binding, t));
       let zero = reductionOps(relationTypes, tg).zero;
       if (valEqual(weight(values), zero)) {
         // Negation case
@@ -151,12 +159,12 @@ function evalQuery(
           if (isVar(v)) return;
         }
         let tuple = getOrInsertZero(tg, values);
-        if (valEqual(weight(tuple), zero)) yield extendBinding(c, tuple, values);
+        if (valEqual(weight(tuple), zero)) yield extendBinding(binding, tuple, values);
       } else {
         // Normal case
-        for (let tuple of readDb(tg, c, values)) {
+        for (let tuple of readDb(tg, binding, values)) {
           if (tupleValid(tuple, tg, values)) {
-            yield extendBinding(c, tuple, values);
+            yield extendBinding(binding, tuple, values);
           }
         }
       }
@@ -322,6 +330,7 @@ function mkSeminaive(r, js, relationTypes) {
             excluded++;
             return "";
           }
+          // TODO: factor out and reuse
           let ty = reductionType(relationTypes, tag);
           if (ty === "bool") {
             if (valEqual(weight(terms), _true)) {

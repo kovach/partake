@@ -101,7 +101,7 @@ node I', body I' B' S', label I' L, succeeds I I', contains P I'.
 
 # Diagnostic
 body I B S, label I L --- remaining-steps I L @length(S).
-tip I, label I L, body I B S --- z I L B S.
+tip I, label I L, body I B S, contains P I --- z P I L B S.
 `;
 
 let branchCounters = new MonoidMap(
@@ -158,6 +158,7 @@ let updateBranch = (ec, parent, id, bind, story, choice) => {
     }
     case "choose": {
       let bindings;
+      // initially solve query, or filter options based on `choice`
       if (op.value.query) {
         let query = fixQuery(op.value.query);
         bindings = af(
@@ -171,6 +172,7 @@ let updateBranch = (ec, parent, id, bind, story, choice) => {
         bindings = bindings.filter((b) => choice.value.unify(b));
         assert(bindings.length > 0, "invalid choice");
       }
+      // if one option remains, proceed
       if (bindings.length === 1) {
         return [mkRest(bindings[0])];
       } else {
@@ -254,25 +256,28 @@ function mainTest(stories) {
 
   /* execute log of actions */
   let thelog = [
-    go(1, " >>> force _ 'foo_1 {}."), // 1
-    go(1, " >>> force _ 'a {}."), // 1
-    go(4, " >>> force _ 'setup_1 {}."), // 4
-    go(1, " >>> force _ 'turn1_1 {}."), // 1
+    go(6, " >>> force _ 'setup_1 {}."), // 6
     go(5, " >>> force _ 'deal_1 {}."), // 5
     go(5, " >>> force _ 'mk-card_1 {}."), // 5
     go(5, " >>> force _ 'mk-card_2 {}."), // 5
+
+    // test push
+    go(1, " >>> force _ 'foo_1 {}."), // 1
+    go(2, " >>> force _ 'push_1 {}."), // 2
+    go(3, " >>> force _ 'move_1 {}."), //
+
+    go(1, " >>> force _ 'turn1_1 {}."), // 1
     go(1, " >>> force _ 'turn_1 {}."), // 6
     go(2, " >>> force _ 'spirit-phase_1 {}."), // 2
     go(1, " >>> force _ 'choose-cards_1 {} {}."), // 5
     go(4, " >>> force _ 'choose-cards_1 {P: 'P} {Name: 'instruments}."),
-    go(3, " >>> force _ 'move_1 {} {}."), // 3
+    go(3, " >>> force _ 'move_2 {} {}."), // 3
   ];
   timeFn(() => ec.solve());
   let i = 0;
   for (let t of thelog) {
     console.log("iter:", i++);
     timeFn(t);
-    //timeFn(() => ec.solve());
   }
 
   /* finish */
@@ -286,9 +291,10 @@ function mainTest(stories) {
     "is-branch",
     "force",
     "succeeds",
+    "body",
   ];
   timeFn(() => ec.print(omit));
-  console.log("db.size: ", state.dbAggregates.size()); // 640 215ms
+  console.log("db.size: ", state.dbAggregates.size()); // 740 200ms
   console.log(state);
 }
 function timeFn(fn) {
@@ -316,10 +322,15 @@ window.onload = () => loadRules(main);
 ! [kinda] assertion
 [x]spawn episode with local tuple, match (only immediate child for now)
 [x]branch
+[x]"@Type Token" feature. push
+
+setup call to isolation, gather
 query *tuples hereditarily
+
+user datalog, game board
 fully qualified force (name all paths)
-user datalog
-goal: spirit island chunk
+draft, activate, ravage
+GOAL one approximate spirit island turn
 
 after rules (access locals of trigger)
 list long script examples

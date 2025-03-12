@@ -19,8 +19,10 @@ predicate -> "!" identifier {% (d) => ("!"+d[1]) %}
 predicate -> identifier {% id %}
 predicate -> local_predicate {% id %}
 predicate -> extern_predicate {% id %}
+predicate -> lifted_predicate {% id %}
 local_predicate -> "*" identifier {% (d) => ("*"+d[1]) %}
 extern_predicate -> "@" identifier {% (d) => ("@"+d[1]) %}
+lifted_predicate -> "^" identifier {% (d) => ("^"+d[1]) %}
 
 # foo(a, b)
 arg_list -> null {% (d) => ([]) %}
