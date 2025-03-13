@@ -297,7 +297,7 @@ function mainTest(stories, userRules) {
   /* Execute log of actions */
   // prettier-ignore
   let thelog = [
-    go(8, " >>> force _ 'setup {}."), // 8
+    go(9, " >>> force _ 'setup {}."), // 8
       go(4, " >>> force _ 'place-presence {} {L: 1}."), //
     go(5, " >>> force _ 'deal {}."), // 5
       go(5, " >>> force _ 'mk-card {}."), // 5
@@ -318,8 +318,12 @@ function mainTest(stories, userRules) {
           go(3, " >>> force _ 'deal-cards/1 {} {}."), // 3
             go(3, " >>> force _ 'move {} {}."), // 3
         go(1, " >>> force _ 'deal-cards {} {}."), // 1
-        go(5, " >>> force _ 'choose-card {} {Name: 'call}."), //
+        go(2, " >>> force _ 'choose-card {} {}."), //
+          go(4, " >>> force _ 'choose-card/1 {} {Name: 'call}."), //
           go(3, " >>> force _ 'move {} {}."), // 3
+        go(1, " >>> force _ 'choose-card {} {}."), //
+          go(4, " >>> force _ 'choose-card/1 {} {Name: 'call}."), //
+            go(3, " >>> force _ 'move {} {}."), // 3
     go(1, " >>> force _ 'spirit-phase {}."), // 2
       go(9, " >>> force _ 'play-cards {}."), // 9
         go(3, " >>> force _ 'move {} {}."), // 3
@@ -364,7 +368,7 @@ function mainTest(stories, userRules) {
     "rule",
   ];
   timeFn(() => ec.print(omit));
-  console.log("db.size: ", state.dbAggregates.size()); // 1186 450
+  console.log("db.size: ", state.dbAggregates.size()); // 1277 491
   console.log(state);
 }
 function timeFn(fn) {
@@ -400,7 +404,7 @@ window.onload = () => loadRules(main);
 [x] activate power, activate: choose target, activate
 
 query *tuples hereditarily
-ravage
+ravage, attack values, assign damage, ordering, blight
 grow: presence
 GOAL one approximate spirit island turn
 setup call to isolation, gather
@@ -414,10 +418,11 @@ modify *tuples
 pain issues
   query *tuples hereditarily
   eval until choice
-  label numbering
-  qualified force? parse trail format
+  no page reload?
   perf
+  label numbering?
 
+qualified force? parse trail format
 box [eq] method?
 ! dot expand derive rules
 revive old unit tests

@@ -4,6 +4,7 @@
   +dahan D,
   +located D -> 1,
   +play-area _,
+  +discard-area _,
 
   player P,
   +hand P H,
@@ -52,11 +53,13 @@ deal-cards: *player P,
   ~choose-card [ *player P ].
 
   choose-card: *player P,
-    choose 1 (
+  ( choose 1 (
       located C -> P.choose-area,
       card-name C Name),
     +owner C -> P,
-    ~move [ *it C, *to P.hand ].
+    ~move [ *it C, *to P.hand ] ),
+  ( located C -> P.choose-area,
+    ~move [ *it C, *to .discard-area ] ).
 
 play-cards: *player P,
   card-plays P -> CP,
@@ -75,7 +78,8 @@ play-cards: *player P,
 ### Card Definitions
 
 # Call to Isolation
-{target-call} target-power: *power P,
+{target-call}
+target-power: *power P,
   owner P -> Player,
   card-name P 'call,
   choose 1 (
