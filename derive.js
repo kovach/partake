@@ -203,8 +203,14 @@ function evalQuery(
 }
 
 // todo
+Array.prototype.key = function () {
+  if (this._key) return this._key;
+  this._key = JSON.stringify(this);
+  return this._key;
+};
+
 function key(tuple) {
-  return JSON.stringify(tuple);
+  return tuple.key();
 }
 
 /* Datalog evaluation state:
@@ -326,8 +332,10 @@ function mkSeminaive(r, js, relationTypes) {
   obj.addRules = (rs) => {
     // find all result bindings from just new rule; no fixpoint
     assertEmptyTuple(rs);
-    for (let [c, w] of dbAggregates.all()) {
-      assertTuple([...c, w], rs);
+    if (rs.some((r) => r.body.length > 0)) {
+      for (let [c, w] of dbAggregates.all()) {
+        assertTuple([...c, w], rs);
+      }
     }
     // add rule and solve
     rs.forEach((r) => rules.push(r));
@@ -337,32 +345,35 @@ function mkSeminaive(r, js, relationTypes) {
     return state;
   };
   obj.print = (filter = []) => {
-    let tupleCmp = (a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b));
+    //let tupleCmp = (a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b));
     let excluded = 0;
     function pp(ps) {
-      return ps
-        .sort(tupleCmp)
-        .map(([tag, ...terms]) => {
-          if (filter.includes(tag)) {
-            excluded++;
-            return "";
-          }
-          // TODO: factor out and reuse
-          let ty = reductionType(relationTypes, tag);
-          if (ty === "bool") {
-            if (valEqual(weight(terms), _true)) {
-              return [tag].concat(core(terms).map(ppTerm)).join(" ");
-            } else {
-              return [tag, ...core(terms).map(ppTerm), "->", "false"].join(" ");
+      return (
+        ps
+          //.sort(tupleCmp)
+          .map(([tag, ...terms]) => {
+            if (filter.includes(tag)) {
+              excluded++;
+              return "";
             }
-          } else {
-            return [tag, ...core(terms).map(ppTerm), "->", ppTerm(weight(terms))].join(
-              " "
-            );
-          }
-        })
-        .filter((l) => l.length > 0)
-        .join("\n");
+            // TODO: factor out and reuse
+            let ty = reductionType(relationTypes, tag);
+            if (ty === "bool") {
+              if (valEqual(weight(terms), _true)) {
+                return [tag].concat(core(terms).map(ppTerm)).join(" ");
+              } else {
+                return [tag, ...core(terms).map(ppTerm), "->", "false"].join(" ");
+              }
+            } else {
+              return [tag, ...core(terms).map(ppTerm), "->", ppTerm(weight(terms))].join(
+                " "
+              );
+            }
+          })
+          .filter((l) => l.length > 0)
+          .sort()
+          .join("\n")
+      );
     }
     console.log(pp(af(dbAggregates.all()).map(([core, w]) => [...core, w])));
     console.log("hidden tuple count: ", excluded);
@@ -493,7 +504,7 @@ function mkSeminaive(r, js, relationTypes) {
     );
   }
   function tupleEqual(t1, t2) {
-    return JSON.stringify(t1) === JSON.stringify(t2);
+    return key(t1) === key(t2);
   }
   function retractTuple(tuple) {
     log("retractTuple: ", ppTuple(tuple));

@@ -368,7 +368,7 @@ function mainTest(stories, userRules) {
     "rule",
   ];
   timeFn(() => ec.print(omit));
-  console.log("db.size: ", state.dbAggregates.size()); // 1277 491
+  console.log("db.size: ", state.dbAggregates.size()); // 1277 300
   console.log(state);
 }
 function timeFn(fn) {
