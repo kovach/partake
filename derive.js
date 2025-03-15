@@ -26,9 +26,7 @@ class DB {
         throw "";
       }
     );
-    for (let t of tuples) {
-      this.addTuple(t);
-    }
+    tuples.forEach((t) => this.addTuple(t));
   }
   addTuple(tuple) {
     this.value.get(tag(tuple)).set(core(tuple), weight(tuple));
@@ -188,25 +186,26 @@ function evalQuery(
     });
   }
 
-  function extendBinding(c, tuple, values) {
+  function extendBinding(binding, tuple, values) {
     function tval(i) {
       return tuple[i + 1];
     }
 
-    c = c.clone();
+    binding = binding.clone();
     values.forEach((term, index) => {
-      if (isVar(term)) c.set(term.value, tval(index));
+      if (isVar(term)) binding.set(term.value, tval(index));
     });
-    c.notes.add("used", tuple);
-    return c;
+    binding.notes.add("used", tuple);
+    return binding;
   }
 }
 
 // todo
+let _key = Symbol("key");
 Array.prototype.key = function () {
-  if (this._key) return this._key;
-  this._key = JSON.stringify(this);
-  return this._key;
+  if (this[_key]) return this[_key];
+  this[_key] = JSON.stringify(this);
+  return this[_key];
 };
 
 function key(tuple) {
@@ -299,8 +298,10 @@ function mkSeminaive(r, js, relationTypes) {
       state.init = false;
     }
   };
-  obj.query = (query, context = emptyBinding()) => {
-    return af(evalQuery({ db: dbAggregates, js, relationTypes }, query, [context]));
+  obj.query = (location, query, context = emptyBinding()) => {
+    return af(
+      evalQuery({ location, db: dbAggregates, js, relationTypes }, query, [context])
+    );
   };
   obj.hasWork = () => {
     return (
@@ -318,11 +319,11 @@ function mkSeminaive(r, js, relationTypes) {
         state.atomWorklist = [];
       } else if (state.delWorklist.length > 0) {
         let tuple = state.delWorklist.pop();
-        log("pop del tuple: ", ppTuple(tuple), tuple);
+        log("pop del tuple: ", tuple);
         retractTuple(tuple);
       } else {
         let tuple = state.addWorklist.pop();
-        log("pop add tuple: ", ppTuple(tuple), tuple);
+        log("pop add tuple: ", tuple);
         assertTuple(tuple);
       }
     }
@@ -424,7 +425,7 @@ function mkSeminaive(r, js, relationTypes) {
     assert(x.rule.type);
     if (x.rule.type === "dyn") {
       for (let key of used) {
-        log("asserting used: ", ppTuple(key));
+        //log("asserting used: ", ppTuple(key));
         dependencies.add(key, x);
         log("dependency list: ", dependencies.get(key));
       }
@@ -480,11 +481,11 @@ function mkSeminaive(r, js, relationTypes) {
   }
   // actually makes worklist into a stack
   function queueTupleAdd(tuple) {
-    log("queueTupleAdd: ", ppTuple(tuple));
+    log("queueTupleAdd: ", tuple);
     state.addWorklist.push(tuple);
   }
   function queueTupleDel(tuple) {
-    log("queueTupleDel: ", ppTuple(tuple));
+    log("queueTupleDel: ", tuple);
     state.delWorklist.push(tuple);
   }
   function bindingEq(b1, b2) {
@@ -507,7 +508,7 @@ function mkSeminaive(r, js, relationTypes) {
     return key(t1) === key(t2);
   }
   function retractTuple(tuple) {
-    log("retractTuple: ", ppTuple(tuple));
+    log("retractTuple: ", tuple);
     for (let ruleBinding of dependencies.get(tuple)) {
       log("retractBinding: ", ruleBinding);
       retractBinding(ruleBinding);

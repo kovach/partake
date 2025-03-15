@@ -15,7 +15,6 @@ import {
 } from "./join.js";
 import {
   fixRules,
-  evalQuery,
   substitute,
   core,
   weight,
@@ -157,13 +156,7 @@ let updateBranch = (ec, parent, id, label, bind, story, choice) => {
       return [mkRest(binding)];
     case "observation": {
       let pattern = [op.pattern.tag].concat(op.pattern.terms);
-      let bindings = af(
-        evalQuery(
-          { location: parent, db: state.dbAggregates, ...defs },
-          [pattern],
-          [binding]
-        )
-      );
+      let bindings = ec.query(parent, [pattern], binding);
       return bindings.map(mkRest);
     }
     case "assert": {
@@ -178,11 +171,7 @@ let updateBranch = (ec, parent, id, label, bind, story, choice) => {
       // initially solve query, or filter options based on `choice`
       if (op.value.query) {
         let query = fixQuery(op.value.query);
-        bindings = af(
-          evalQuery({ location: parent, db: state.dbAggregates, ...defs }, query, [
-            binding,
-          ])
-        );
+        bindings = ec.query(parent, query, binding);
       } else {
         assert(op.value.options);
         bindings = op.value.options;
@@ -368,7 +357,7 @@ function mainTest(stories, userRules) {
     "rule",
   ];
   timeFn(() => ec.print(omit));
-  console.log("db.size: ", state.dbAggregates.size()); // 1277 300
+  console.log("db.size: ", state.dbAggregates.size()); // 1282 350?
   console.log(state);
 }
 function timeFn(fn) {
@@ -403,22 +392,26 @@ window.onload = () => loadRules(main);
 [x] play-cards: pay for cards
 [x] activate power, activate: choose target, activate
 
-query *tuples hereditarily
-ravage, attack values, assign damage, ordering, blight
+indexicals
+  - only reductions need to traverse the path
+  - bindings just propagate the episode tag. copy on write?
+eval until choice
+
+ravage:
+  copy over ravage rules
+  allow choose fizzle
+  temporal modifier examples (cities do +3, ...)
+  setup tokens,
+
+?! non-linear rules
 grow: presence
 GOAL one approximate spirit island turn
-setup call to isolation, gather
 
 after rules (access locals of trigger)
-list long script examples
-temporal pattern
-quantifier
-modify *tuples
+other quantifiers
 
 pain issues
-  query *tuples hereditarily
-  eval until choice
-  no page reload?
+  skip page reload?
   perf
   label numbering?
 

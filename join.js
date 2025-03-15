@@ -180,19 +180,8 @@ function cloneTerm(term) {
 class Binding {
   substitution = new Map();
   notes = new ArrayMap();
-
   constructor(values = []) {
     for (let [k, v] of values) this.set(k, v);
-  }
-
-  toJSON() {
-    return `{${Array.from(this.substitution.entries())
-      .map(([k, v]) => k + ": " + ppTerm(v))
-      .join(",")}}`;
-  }
-
-  *[Symbol.iterator]() {
-    for (let k of this.substitution.keys()) yield k;
   }
 
   clone() {
@@ -203,28 +192,6 @@ class Binding {
     return m;
   }
 
-  // all keys in this appear with the same value in b
-  // todo: allow vars in b (unifyLe)?
-  le(b) {
-    for (let [key, val] of this.substitution.entries()) {
-      if (!b.has(key) || !valEqual(b.get(key), val)) return false;
-    }
-    return true;
-  }
-  unify(b) {
-    let values = [];
-    for (let [key, val] of this.substitution.entries()) {
-      if (b.has(key)) {
-      }
-      if (b.has(key) && !valEqual(b.get(key), val)) return false;
-      values.push([key, val]);
-    }
-    for (let [key, val] of b.substitution.entries()) {
-      values.push([key, val]);
-    }
-    console.log("done");
-    return new Binding(values);
-  }
   set(key, val) {
     this.substitution.set(key, val);
     return this;
@@ -235,12 +202,46 @@ class Binding {
   has(key) {
     return this.get(key) !== undefined;
   }
-  eq(b) {
-    for (let [key, val] of this.substitution.entries()) {
-      if (!valEqual(b.get(key), val)) return false;
+  size() {
+    return this.substitution.size;
+  }
+  *entries() {
+    yield* this.substitution.entries();
+  }
+  // all keys in this appear with the same value in b
+  // todo: allow vars in b (unifyLe)?
+  le(b) {
+    for (let [key, val] of this.entries()) {
+      if (!b.has(key) || !valEqual(b.get(key), val)) return false;
     }
     return true;
   }
+  toJSON() {
+    return `{${Array.from(this.entries())
+      .map(([k, v]) => k + ": " + ppTerm(v))
+      .join(",")}}`;
+  }
+  unify(b) {
+    let values = [];
+    for (let [key, val] of this.substitution.entries()) {
+      if (b.has(key) && !valEqual(b.get(key), val)) return false;
+      values.push([key, val]);
+    }
+    for (let [key, val] of b.substitution.entries()) {
+      values.push([key, val]);
+    }
+    console.log("done");
+    return new Binding(values);
+  }
+  eq(b) {
+    for (let [key, val] of this.entries()) {
+      if (!valEqual(b.get(key), val)) return false;
+    }
+    return this.size() === b.size();
+  }
+  //*[Symbol.iterator]() {
+  //  for (let k of this.substitution.keys()) yield k;
+  //}
 }
 function emptyBinding() {
   return new Binding();
