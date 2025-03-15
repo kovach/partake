@@ -2,7 +2,6 @@ import { randomSample } from "./random.js";
 import { assert, range, MonoidMap, splitArray, toTag } from "./collections.js";
 import { parseNonterminal, parseProgram } from "./parse.js";
 import {
-  emptyBinding,
   freshId,
   mkInt,
   mkSym,
@@ -29,25 +28,9 @@ function parseRules(text) {
   return fixRules(parseNonterminal("derivation_block", removeComments(text)));
 }
 
-function mkNode(state, tag) {
-  let id = freshId();
-  addAtom(state, ["node", id]);
-  addAtom(state, ["node-tag", id, tag]);
-  return id;
-}
-function mkChildNode(state, tag, parent) {
-  let newId = mkNode(state, tag);
-  addAtom(state, ["contains", parent, newId]);
-  return newId;
-}
 function tor(name, fn) {
   return (...args) => (fn(...args) ? [[...args]] : []);
 }
-let tr = (x) => x.map((x) => [...x, _true]);
-let single =
-  (fn) =>
-  (...args) =>
-    tr([fn(...args)]);
 
 function loadRuleTuples(state, stories) {
   for (let [type, ruleGroup] of Object.entries(stories)) {
@@ -59,54 +42,6 @@ function loadRuleTuples(state, stories) {
     }
   }
 }
-const mainProgram = `
-node _ id --- node id.
-node '_branch id --- is-branch id.
-
-succeeds I I' --- old I.
-node I, body I _ S, @lt 0 @length(S), old I -> 0 --- tip I.
-
-# TODO needed?
-#node id --- reach id id.
-#reach X Z, contains Z Y --- reach X Y.
-#then A B, reach A X, reach B Y --- before X Y.
-#delay e -> a, next-delay -> b, @lt a b --- finished e.
-#node id --- delay id -> 0.
-#before x y, delay x -> a --- delay y -> @add(a,1).
-#unfinished x, delay x -> val --- next-delay -> val.
-#is-branch id, delay id -> v, next-delay -> v --- active id.
-#node '_branch id, body id -> body, @nonemptyBody body
-#--- unfinished id.
-#node x, reach x y, unfinished y --- unfinished x.
-
-############## Updates ##############
-
-######### Rule Activation
-
-node-tag I T, rule name T 'during Body, @initBranch name Body L
->>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-node I', contains I I', body I' {} Body, label I' L.
-
-######### Branch Update
-
-force x L B --- force x L B {}.
-
-!force x L BindPattern Choice, label I L, tip I, contains P I,
-body I B S, @le BindPattern B, @updateBranch P I L B S Choice L' B' S'
->>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-node I', body I' B' S', label I' L', succeeds I I', contains P I'.
-
-# prune this tip
-!terminate x L, label I L, tip I
->>>
-succeeds I _.
-
-# Diagnostic
-tip I, label I L, body I B S, contains P I --- z P I L B S.
-
-#body I B S, label I L --- remaining-steps I L @length(S).
-`;
-
 let branchCounters = new MonoidMap(
   () => ({
     count: 0,
@@ -114,14 +49,26 @@ let branchCounters = new MonoidMap(
   (l, r) => (l.count += r)
 );
 function initBranch(name, body) {
-  let { count } = branchCounters.add(name.value, 1);
+  // let { count } = branchCounters.add(name.value, 1);
   return [name, body, mkSym(name.value)];
-  //return [name, body, mkSym(name.value + "_" + count)];
+}
+
+function mkNode(state, tag) {
+  let id = freshId();
+  addAtom(state, ["node", id]);
+  addAtom(state, ["node-tag", id, tag]);
+  return id;
+}
+function mkChildNode(state, tag, parent) {
+  let newId = mkNode(state, tag);
+  addAtom(state, ["contains", parent, newId]);
+  return newId;
 }
 
 let _true = mkInt(1);
 let labelSep = "/";
-let updateBranch = (ec, parent, id, label, bind, story, choice) => {
+
+function updateBranch(ec, parent, id, label, bind, story, choice) {
   let state = ec.getState();
   let defs = ec.defs;
   let binding = bind.value;
@@ -155,15 +102,23 @@ let updateBranch = (ec, parent, id, label, bind, story, choice) => {
       }
       return [mkRest(binding)];
     case "observation": {
-      let pattern = [op.pattern.tag].concat(op.pattern.terms);
+      let {
+        pattern: { tag, terms },
+      } = op;
+      let pattern = [tag].concat(terms);
       let bindings = ec.query(parent, [pattern], binding);
       return bindings.map(mkRest);
     }
     case "assert": {
-      let pattern = [op.tuple.tag].concat(op.tuple.terms);
+      let { when, tuple } = op;
+      let pattern = [tuple.tag].concat(tuple.terms);
       binding = binding.clone();
-      let tuple = substitute(defs.js, binding, pattern, true);
-      addAtom(state, core(tuple), weight(tuple));
+      let atom = substitute(defs.js, binding, pattern, true);
+      if (when !== undefined) {
+        throw "";
+      } else {
+        addAtom(state, core(atom), weight(atom));
+      }
       return [mkRest(binding)];
     }
     case "choose": {
@@ -177,10 +132,10 @@ let updateBranch = (ec, parent, id, label, bind, story, choice) => {
         bindings = op.value.options;
       }
       bindings = bindings.filter((b) => choice.value.unify(b));
-      assert(bindings.length > 0, "invalid choice");
       let { quantifier } = op;
       switch (quantifier.tag) {
         case "eq":
+          assert(bindings.length >= quantifier.count, "invalid choice");
           if (bindings.length === quantifier.count) {
             return bindings.map(mkRest);
           }
@@ -189,14 +144,8 @@ let updateBranch = (ec, parent, id, label, bind, story, choice) => {
           bindings = randomSample(bindings, quantifier.count);
           return bindings.map(mkRest);
       }
-      // if one option remains, proceed
-      // if (bindings.length === 1) {
-      //   return [mkRest(bindings[0])];
-      // } else
-      {
-        let newOp = { ...op, value: { options: bindings } };
-        return [mk(label, binding, [newOp, ...rest])];
-      }
+      let newOp = { ...op, value: { options: bindings } };
+      return [mk(label, binding, [newOp, ...rest])];
     }
     case "branch":
       // one successor per option + 1 for the rest of the rule
@@ -216,7 +165,39 @@ let updateBranch = (ec, parent, id, label, bind, story, choice) => {
     default:
       throw "";
   }
-};
+}
+
+const mainProgram = `
+node _ id --- node id.
+
+succeeds I I' --- old I.
+node I, body I _ S, @lt 0 @length(S), old I -> 0 --- tip I.
+
+############## Updates ##############
+
+###  Rule Activation
+
+node-tag I T, rule name T 'during Body, @initBranch name Body L
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+node I', contains I I', body I' {} Body, label I' L.
+
+### Branch Update
+
+force x L B --- force x L B {}.
+
+!force x L BindPattern Choice, label I L, tip I, contains P I,
+body I B S, @le BindPattern B, @updateBranch P I L B S Choice L' B' S'
+>>>
+node I', body I' B' S', label I' L', succeeds I I', contains P I'.
+
+# prune this tip
+!terminate x L, label I L, tip I >>> succeeds I _.
+
+node I, tip I --- max-tip -> I.
+
+# Diagnostic
+tip I, label I L, body I B S, contains P I --- z I P L B S.
+`;
 
 function mainTest(stories, userRules) {
   let relTypes = {
@@ -225,21 +206,28 @@ function mainTest(stories, userRules) {
 
     delay: "max",
     "next-delay": "min",
+    "max-tip": "max",
+    range: "min",
 
     steps: "num",
     forceSteps: "num",
-    range: "min",
     energy: "num",
     "card-plays": "num",
   };
   let derivations = parseRules(mainProgram);
+
+  let tr = (x) => x.map((x) => [...x, _true]);
+  let single =
+    (fn) =>
+    (...args) =>
+      tr([fn(...args)]);
 
   let js = {
     log: (...args) => {
       console.log("!!!!!!!!!! ", ...args);
     },
     initBranch: single(initBranch),
-    updateBranch: (...args) => updateBranch(ec, ...args),
+    updateBranch: (...args) => updateBranch(ec, ...args).reverse(),
     add: ({ value: a }, { value: b }) => mkInt(a + b),
     eq: tor("eq", (a, b) => {
       return valEqual(a, b);
@@ -286,9 +274,9 @@ function mainTest(stories, userRules) {
   /* Execute log of actions */
   // prettier-ignore
   let thelog = [
-    go(9, " >>> force _ 'setup {}."), // 8
+    go(2, " >>> force _ 'setup {}."), // 8
       go(4, " >>> force _ 'place-presence {} {L: 1}."), //
-    go(5, " >>> force _ 'deal {}."), // 5
+    go(6, " >>> force _ 'deal {}."), // 5
       go(5, " >>> force _ 'mk-card {}."), // 5
 
     // test misc.
@@ -314,51 +302,79 @@ function mainTest(stories, userRules) {
           go(4, " >>> force _ 'choose-card/1 {} {Name: 'call}."), //
             go(3, " >>> force _ 'move {} {}."), // 3
     go(1, " >>> force _ 'spirit-phase {}."), // 2
-      go(9, " >>> force _ 'play-cards {}."), // 9
+      go(10, " >>> force _ 'play-cards {}."), // 9
         go(3, " >>> force _ 'move {} {}."), // 3
       go(1, " >>> force _ 'play-cards {}."), // 1
       go(1, " >>> terminate _ 'play-cards."), // 1
     go(1, " >>> force _ 'turn {}."),
     go(4, " >>> force _ 'power-phase {}."), // 4
+    () => 'done',
       go(5, " >>> force _ 'target-call {} {Land: 1}."), // 5
         go(3, " >>> force _ 'activate-call {} {}."), //
         go(1, " >>> terminate _ 'activate-call/push-invaders."), //
         go(2, " >>> force _ 'activate-call/push-dahan {} {}."), //
           go(2, " >>> force _ 'push {} {L:4}."), //
             go(3, " >>> force _ 'move {}."), // 3
+      go(1, " >>> force _ 'target-power {} {}."), //
   ];
   timeFn(() => ec.solve());
   let i = 0;
-  for (let t of thelog) {
-    console.log("iter:", ++i);
-    if (timeFn(t) === "done") break; // early exit
+  function runLog() {
+    while (thelog.length > 0) {
+      let [t, ...rest] = thelog;
+      thelog = rest;
+      console.log("iter:", ++i);
+      if (timeFn(t) === "done") break; // early exit
+    }
+    print();
   }
 
+  runLog();
+
+  function stepLog() {
+    if (thelog.length === 0) {
+      console.log("done");
+      return;
+    }
+    let [t, ...rest] = thelog;
+    timeFn(t);
+    thelog = rest;
+    print();
+  }
+
+  ["keydown", "onclick"].forEach((ty) => {
+    window.addEventListener(ty, () => {
+      stepLog();
+    });
+  });
+
   /* finish */
-  let omit = [
-    //"foo",
-    "reach",
-    "remaining-steps",
-    "contains",
-    "old",
-    "node",
-    "is-branch",
-    "force",
-    "succeeds",
-    "body",
-    "node-tag",
-    "label",
+  function print() {
+    let omit = [
+      //"foo",
+      "reach",
+      "remaining-steps",
+      "contains",
+      "old",
+      "node",
+      "is-branch",
+      "force",
+      "succeeds",
+      "body",
+      "node-tag",
+      "label",
 
-    "land",
-    "adjacent",
-    "adjacent-land",
-    "range",
+      "land",
+      "adjacent",
+      "adjacent-land",
+      "range",
 
-    "rule",
-  ];
-  timeFn(() => ec.print(omit));
-  console.log("db.size: ", state.dbAggregates.size()); // 1282 350?
-  console.log(state);
+      "rule",
+    ];
+    ec.print(omit);
+    console.log("db.size: ", state.dbAggregates.size()); // 1475 300?
+    console.log(state);
+  }
 }
 function timeFn(fn) {
   let t0 = performance.now();
@@ -393,8 +409,15 @@ window.onload = () => loadRules(main);
 [x] activate power, activate: choose target, activate
 
 indexicals
-  - only reductions need to traverse the path
+  - just evaluate copies of database
+    - will currently have one for game, turn
+    - keep * as-is for now
+  - aggregate (defend over turn) vs shadow (sub-game, sub-target)
+
+  no
+  - only reductions (of extern atoms) need to traverse the path
   - bindings just propagate the episode tag. copy on write?
+
 eval until choice
 
 ravage:
@@ -409,6 +432,7 @@ GOAL one approximate spirit island turn
 
 after rules (access locals of trigger)
 other quantifiers
+? pointer optimization for `located`
 
 pain issues
   skip page reload?

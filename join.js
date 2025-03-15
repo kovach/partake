@@ -1,5 +1,4 @@
 import { ArrayMap, assert, ap } from "./collections.js";
-//import { Binding } from "./binding.js";
 
 const str = (e) => JSON.stringify(e, null, 2);
 const pp = (x) => console.log(str(x));
@@ -139,26 +138,6 @@ function isVar(term) {
 }
 function isSym(term) {
   return term.tag === "sym";
-}
-
-function evalTerm(js, binding, term) {
-  if (isLiteral(term)) {
-    if (term.tag === "call") {
-      let args = term.args.map((v) => evalTerm(js, binding, v));
-      return js[term.fn](...args);
-    } else if (term.tag === "bind") {
-      return term; // todo: handle variables. change representation?
-    } else if (term.tag === "neg") {
-      let { value } = evalTerm(js, binding, term.value);
-      return mkInt(-value);
-    } else {
-      assert(term.tag === "int" || term.tag === "sym");
-      return term;
-    }
-  }
-  let maybeValue = binding.get(term.value);
-  if (maybeValue !== undefined) return maybeValue;
-  return term;
 }
 
 function cloneTerm(term) {
@@ -408,6 +387,34 @@ function freshId() {
   return mkSym(uniqueInt());
 }
 
+// todo: rename/cleanup
+function evalTerm(js, binding, term) {
+  if (isLiteral(term)) {
+    if (term.tag === "call") {
+      let args = term.args.map((v) => evalTerm(js, binding, v));
+      return js[term.fn](...args);
+    } else if (term.tag === "bind") {
+      return term; // todo: handle variables. change representation?
+    } else if (term.tag === "neg") {
+      let v = evalTerm(js, binding, term.value);
+      assert(!isVar(v));
+      return mkInt(-v.value);
+    } else {
+      assert(term.tag === "int" || term.tag === "sym");
+      return term;
+    }
+  }
+  let maybeValue = binding.get(term.value);
+  if (maybeValue !== undefined) return maybeValue;
+  return term;
+}
+
+function evalTermStrict(js, binding, term) {
+  let x = evalTerm(js, binding, term);
+  assert(!isVar(term));
+  return x;
+}
+
 function substituteTerm(js, binding, term) {
   if (isLiteral(term)) return evalTerm(js, binding, term);
   if (isHole(term)) {
@@ -416,7 +423,7 @@ function substituteTerm(js, binding, term) {
     assert(isVar(term));
     let v = term.value;
     let maybeV = binding.get(v);
-    if (maybeV) return maybeV;
+    if (maybeV !== undefined) return maybeV;
     else {
       let id = freshId();
       binding.set(v, id);
@@ -445,6 +452,7 @@ export {
   isSym,
   valEqual,
   evalTerm,
+  evalTermStrict,
   emptyBinding,
   evalQuery,
   freshId,

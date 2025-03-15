@@ -1,14 +1,7 @@
-{turn1} game: ~turn [ *count 1].
-{setup} game:
-  +player 'P,
-  +dahan D,
-  +located D -> 1,
-  +play-area _,
-  +discard-area _,
+{turn1} game: ~turn.
 
+{setup} game:
   player P,
-  +hand P H,
-  +card-plays P -> 1,
   ~place-presence [ *player P],
   .
 
@@ -16,12 +9,13 @@
   +deck D,
   ~mk-card [ *name 'instruments ],
   ~mk-card [ *name 'call ],
+  ~mk-card [ *name 'guard-healing ],
   player P,
   +choose-area P _,
   .
 
 {foo} game:
-  ~push [ *target 1, *type 'dahan ],
+  ~push [ *from 1, *type 'dahan ],
   branch ( (a: ~a) (b: ~b) ),
   player P,
   +energy P -> 2,
@@ -67,10 +61,9 @@ play-cards: *player P,
   energy P -> E,
   choose 1 (
     located Card -> P.hand,
-    card-cost Card Cost,
-    @le Cost E
+    @le Card.card-cost E
   ),
-  +energy P -> (- Cost),
+  +energy P -> (- Card.card-cost),
   +card-plays P -> (-1),
   ~move [ *it Card, *to .play-area ],
   ~play-cards.
@@ -94,16 +87,40 @@ target-power: *power P,
   card-name P 'call,
   branch (
     ( push-invaders:
-      located .dahan .target,
-      ~push [ *type 'explorer, *type 'town ])
-    ( push-dahan: ~push [ *target .*target, *type 'dahan ] )
+      located .dahan .*target,
+      ~push [ *from .*target,
+              *type 'explorer, *type 'town ])
+    ( push-dahan: ~push [ *from .*target, *type 'dahan ] )
   ).
+
+# Guard the Healing Land
+target-power: *power Pow,
+  owner Pow -> P,
+  card-name Pow 'guard-healing,
+  choose 1 (
+    sacred-site P Land,
+    range Land T -> 1,
+  ),
+  ~activate-power [ *power Pow, *target T ].
+
+activate-power: *power C,
+  card-name C 'guard-healing,
+  ~remove-blight [ *from .*target ],
+  ~defend [ *target .*target, *amount 4 ].
+
 
 ### Core Actions
 
 move:
   *it I, *to T,
   +located I -> T.
+
+defend: +[turn] land-defense .*target -> .*amount.
+
+# land-defense/1/+
+invaders-deal-damage:
+  land-defense .*target -> D,
+  +[invaders-deal-damage] invader-damage .*target -> (-D).
 
 place-presence: *player P,
   choose 1 (land L),
@@ -112,9 +129,9 @@ place-presence: *player P,
 
 push:
   choose 1 (
-    located T -> .*target,
+    located T -> .*from,
     *type X, ^X T,
-    range .*target L -> 1,
+    range .*from L -> 1,
   ),
   ~move [*it T, *to L].
 
@@ -124,10 +141,21 @@ mk-card: *name N,
   +card-name C N,
   +located C -> .deck.
 
-mk-card:
-  card-name C 'call,
-  +card-cost C 0.
+mk-card: card-name C 'call, +card-cost C 1,
+  #range C -> 1,
+  # ???
+  #restriction { L | located .dahan -> L },
+  .
+mk-card: card-name C 'instruments, +card-cost C 4.
+mk-card: card-name C 'guard-healing, +card-cost C 3.
 
-mk-card:
-  card-name C 'instruments,
-  +card-cost C 4.
+
+### Invader turn
+invader-phase: ~ravage.
+ravage:
+  active-ravage-card _ Type,
+  type L Type,
+  ~do-ravage [ *location L ].
+
+#do-ravage: *location L,
+

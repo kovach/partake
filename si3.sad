@@ -1,3 +1,16 @@
+# TODO move this back
+>>>
+  player 'P,
+  dahan D,
+  located D -> 1,
+  play-area _,
+  discard-area _,
+  .
+
+player P
+>>>>>>>>
+hand P H, card-plays P -> 1.
+
 # Board C
 -------------------
 land 1, land 2, land 3, land 4,
@@ -14,13 +27,21 @@ adjacent-land A B --- adjacent A B.
 adjacent-land A B --- adjacent B A.
 
 land A
-------
+---------------
 range A A -> 0.
 
 range A B -> D, adjacent B C
-----------------------
+----------------------------
 range A C -> @add(D, 1).
 
 presence x P, located x -> Land
--------
+---
+total-presence P Land -> 1.
+
+presence x P, located x -> Land
+---
 player-land P Land.
+
+total-presence P Land -> N, @le 2 N
+---
+sacred-site P Land.

@@ -3,6 +3,7 @@ import {
   af,
   emptyBinding,
   evalTerm,
+  evalTermStrict,
   uniqueInt,
   isLiteral,
   freshId,
@@ -456,6 +457,7 @@ function mkSeminaive(r, js, relationTypes) {
     }
   }
   function changeAtom(atom, id, binding, m) {
+    let { zero } = reductionOps(relationTypes, tag(atom));
     let oldWeighted = getWeight(core(atom));
     mod.cases(
       m,
@@ -466,13 +468,9 @@ function mkSeminaive(r, js, relationTypes) {
     // todo: batching
     if (!valEqual(weight(oldWeighted), weight(newWeighted))) {
       queueTupleDel(oldWeighted);
-      let { zero } = reductionOps(relationTypes, tag(atom));
       if (!valEqual(weight(newWeighted), zero)) queueTupleAdd(newWeighted);
-    } else {
-      log("no change: ", oldWeighted, newWeighted);
-    }
+    } else log("no change: ", oldWeighted, newWeighted);
   }
-
   function getWeight(core) {
     let { zero, add } = reductionOps(relationTypes, tag(core));
     let values = dbAtoms.get(core);
@@ -539,7 +537,7 @@ function mkSeminaive(r, js, relationTypes) {
 }
 
 function substituteTerm(js, binding, term, allowFresh) {
-  if (isLiteral(term)) return evalTerm(js, binding, term);
+  if (isLiteral(term)) return evalTermStrict(js, binding, term);
   // todo: check during parsing
   assert(isVar(term) || isHole(term));
   let v = term.value;
