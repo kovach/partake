@@ -45,3 +45,10 @@ player-land P Land.
 total-presence P Land -> N, @le 2 N
 ---
 sacred-site P Land.
+
+
+### Static Card Attributes
+card-name C 'call --- card-cost C 1.
+card-name C 'instruments --- card-cost C 4.
+card-name C 'guard-healing --- card-cost C 3.
+

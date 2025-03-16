@@ -318,6 +318,12 @@ function ppEpisode(e) {
     case "subStory": {
       return `(${ppRuleBody(e.story)})`;
     }
+    case "countIf": {
+      return `if (${ppQuery(e.value)})`;
+    }
+    case "countNot": {
+      return `not (${ppQuery(e.value)})`;
+    }
     default:
       throw "";
   }

@@ -19,6 +19,8 @@
   branch ( (a: ~a) (b: ~b) ),
   player P,
   +energy P -> 2,
+  if (player P),
+  not (player P),
   .
 
 {turn} turn:
@@ -120,7 +122,8 @@ defend: +[turn] land-defense .*target -> .*amount.
 # land-defense/1/+
 invaders-deal-damage:
   land-defense .*target -> D,
-  +[invaders-deal-damage] invader-damage .*target -> (-D).
+  +[invaders-deal-damage]
+    invader-damage .*target -> (-D).
 
 place-presence: *player P,
   choose 1 (land L),
@@ -141,13 +144,13 @@ mk-card: *name N,
   +card-name C N,
   +located C -> .deck.
 
-mk-card: card-name C 'call, +card-cost C 1,
-  #range C -> 1,
-  # ???
-  #restriction { L | located .dahan -> L },
-  .
-mk-card: card-name C 'instruments, +card-cost C 4.
-mk-card: card-name C 'guard-healing, +card-cost C 3.
+#mk-card: *name C 'call, +card-cost C 1,
+#  #range C -> 1,
+#  # ???
+#  #restriction { L | located .dahan -> L },
+#  .
+#mk-card: *name 'instruments, +card-cost C 4.
+#mk-card: *name 'guard-healing, +card-cost C 3.
 
 
 ### Invader turn

@@ -150,6 +150,11 @@ function dotExpandRuleBody(body) {
           };
         case "subStory":
           return [{ tag: "subStory", story: dotExpandRuleBody(p.story) }];
+        case "countIf":
+        case "countNot": {
+          let { prefix, query } = dotExpandQuery(p.value);
+          return [{ ...p, value: [...prefix, ...query] }];
+        }
         //case "retract": {
         //  let { prefix, query } = dotExpandQuery(p.query);
         //  return fix(prefix).concat([{ tag: "retract", query: query }]);

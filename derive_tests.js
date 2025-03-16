@@ -22,6 +22,25 @@ import {
   addAtom,
 } from "./derive.js";
 
+function timeFn(fn) {
+  let t0 = performance.now();
+  let x = fn();
+  let t1 = performance.now();
+  let ms = t1 - t0;
+  if (ms > 0) console.log("time: ", ms);
+  return x;
+}
+
+function loadRules(fn) {
+  Promise.all([fetch("si3.mm"), fetch("si3.sad")])
+    .then((res) => Promise.all(res.map((p) => p.text())))
+    .then(([t1, t2]) => fn(parseProgram(t1), parseRules(t2)));
+}
+
+function main(stories, rules) {
+  timeFn(() => mainTest(stories, rules));
+}
+
 function parseRules(text) {
   let removeCommentFromLine = (s) => /[^#]*/.exec(s);
   let removeComments = (text) => text.split("\n").map(removeCommentFromLine).join("\n");
@@ -68,6 +87,28 @@ function mkChildNode(state, tag, parent) {
 let _true = mkInt(1);
 let labelSep = "/";
 
+function updateBranchStuck(ec, parent, id, label, bind, story, choice) {
+  let r = updateBranch(ec, parent, id, label, bind, story, choice);
+  r.reverse();
+  if (r.length === 0) return [mk(mkSym("stuck"), bind.value, [])];
+  return r;
+
+  function mk(newLabel, binding, newStory) {
+    return [
+      parent,
+      id,
+      label,
+      bind,
+      story,
+      choice,
+      newLabel,
+      mkBind(binding),
+      mkBox(newStory),
+      _true,
+    ];
+  }
+}
+
 function updateBranch(ec, parent, id, label, bind, story, choice) {
   let state = ec.getState();
   let defs = ec.defs;
@@ -107,7 +148,10 @@ function updateBranch(ec, parent, id, label, bind, story, choice) {
       } = op;
       let pattern = [tag].concat(terms);
       let bindings = ec.query(parent, [pattern], binding);
-      return bindings.map(mkRest);
+      if (bindings.length === 0) {
+        //return [];
+        return [mk(mkSym("stuck"), binding, [])];
+      } else return bindings.map(mkRest);
     }
     case "assert": {
       let { when, tuple } = op;
@@ -161,6 +205,12 @@ function updateBranch(ec, parent, id, label, bind, story, choice) {
         mk({ ...label, value: label.value + labelSep + "1" }, binding, op.story),
         mkRest(binding),
       ];
+    case "countIf":
+    case "countNot":
+      let query = fixQuery(op.value);
+      let n = ec.query(parent, query, binding).length;
+      let ok = op.tag === "countIf" ? n > 0 : n === 0;
+      return ok ? [mkRest(binding)] : [];
       throw "";
     default:
       throw "";
@@ -197,6 +247,8 @@ node I, tip I --- max-tip -> I.
 
 # Diagnostic
 tip I, label I L, body I B S, contains P I --- z I P L B S.
+
+label I 'stuck, succeeds I' I, body I' _ S --- stuck I S.
 `;
 
 function mainTest(stories, userRules) {
@@ -227,7 +279,7 @@ function mainTest(stories, userRules) {
       console.log("!!!!!!!!!! ", ...args);
     },
     initBranch: single(initBranch),
-    updateBranch: (...args) => updateBranch(ec, ...args).reverse(),
+    updateBranch: (...args) => updateBranchStuck(ec, ...args),
     add: ({ value: a }, { value: b }) => mkInt(a + b),
     eq: tor("eq", (a, b) => {
       return valEqual(a, b);
@@ -282,10 +334,10 @@ function mainTest(stories, userRules) {
     // test misc.
     go(2, " >>> force _ 'foo {}."), // 2
       go(2, " >>> force _ 'push {} {L:2}."), // 2
-      go(3, " >>> force _ 'move {}."), // 3
+        go(3, " >>> force _ 'move {}."), // 3
       go(1, " >>> force _ 'foo/a {}."), // 1
       go(1, " >>> force _ 'foo/b {}."), // 1
-    go(3, " >>> force _ 'foo {}."), // 2
+    go(4, " >>> force _ 'foo {}."), // 2
 
     go(1, " >>> force _ 'turn1 {}."),
     go(1, " >>> force _ 'turn {}."), // 6
@@ -308,14 +360,15 @@ function mainTest(stories, userRules) {
       go(1, " >>> terminate _ 'play-cards."), // 1
     go(1, " >>> force _ 'turn {}."),
     go(4, " >>> force _ 'power-phase {}."), // 4
-    () => 'done',
       go(5, " >>> force _ 'target-call {} {Land: 1}."), // 5
         go(3, " >>> force _ 'activate-call {} {}."), //
         go(1, " >>> terminate _ 'activate-call/push-invaders."), //
         go(2, " >>> force _ 'activate-call/push-dahan {} {}."), //
           go(2, " >>> force _ 'push {} {L:4}."), //
             go(3, " >>> force _ 'move {}."), // 3
-      go(1, " >>> force _ 'target-power {} {}."), //
+      go(3, " >>> force _ 'target-power {} {}."), //
+      go(2, " >>> force _ 'activate-power {} {}."), //
+    () => 'done',
   ];
   timeFn(() => ec.solve());
   let i = 0;
@@ -372,80 +425,9 @@ function mainTest(stories, userRules) {
       "rule",
     ];
     ec.print(omit);
-    console.log("db.size: ", state.dbAggregates.size()); // 1475 300?
+    console.log("db.size: ", state.dbAggregates.size()); // 1364 300
     console.log(state);
   }
 }
-function timeFn(fn) {
-  let t0 = performance.now();
-  let x = fn();
-  let t1 = performance.now();
-  let ms = t1 - t0;
-  if (ms > 0) console.log("time: ", ms);
-  return x;
-}
-
-function loadRules(fn) {
-  Promise.all([fetch("si3.mm"), fetch("si3.sad")])
-    .then((res) => Promise.all(res.map((p) => p.text())))
-    .then(([t1, t2]) => fn(parseProgram(t1), parseRules(t2)));
-}
-
-function main(stories, rules) {
-  timeFn(() => mainTest(stories, rules));
-}
 
 window.onload = () => loadRules(main);
-
-/*
-! [kinda] assertion
-[x]spawn episode with local tuple, match (only immediate child for now)
-[x]branch
-[x]"@Type Token" feature. push
-[x]user datalog, SI board
-[x] subStory case
-[x] draft: randomize quantifier, test
-[x] play-cards: pay for cards
-[x] activate power, activate: choose target, activate
-
-indexicals
-  - just evaluate copies of database
-    - will currently have one for game, turn
-    - keep * as-is for now
-  - aggregate (defend over turn) vs shadow (sub-game, sub-target)
-
-  no
-  - only reductions (of extern atoms) need to traverse the path
-  - bindings just propagate the episode tag. copy on write?
-
-eval until choice
-
-ravage:
-  copy over ravage rules
-  allow choose fizzle
-  temporal modifier examples (cities do +3, ...)
-  setup tokens,
-
-?! non-linear rules
-grow: presence
-GOAL one approximate spirit island turn
-
-after rules (access locals of trigger)
-other quantifiers
-? pointer optimization for `located`
-
-pain issues
-  skip page reload?
-  perf
-  label numbering?
-
-qualified force? parse trail format
-box [eq] method?
-! dot expand derive rules
-revive old unit tests
-? immutable bindings
-? enrich patterns with relationType/js content
-query live db interface
-save derivation traces for regression tests
-delete tuples with >>>
-*/

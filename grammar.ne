@@ -107,6 +107,8 @@ episode_expr -> "choose" __ quantifier __ op pure_query cp {% (d) => [{ tag: "ch
 episode_expr -> "branch" _ "(" (_ op branch_option cp):* cp
   {% (d) => [{ tag: "branch", value: d[3].map((d) => d[2]) }] %}
 episode_expr -> op rule_body cp {% (d) => [{tag: "subStory", story: d[1] }] %}
+episode_expr -> "if" _ op pure_query cp {% (d) => [{ tag: "countIf", value: d[3] }] %}
+episode_expr -> "not" _ op pure_query cp {% (d) => [{ tag: "countNot", value: d[3] }] %}
 
 #episode_expr -> "-" _ pure_query {% (d) => [{tag: "retract", query: d[2] }] %}
 #episode_expr -> op pure_query cp _ "=>" _ op pure_query cp {% (d) => [{ tag: "modification", before: d[1], after: d[7] }] %}
