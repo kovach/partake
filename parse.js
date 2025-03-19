@@ -122,66 +122,78 @@ function dotExpandEpisode(expr) {
 }
 
 function dotExpandRuleBody(body) {
-  let fix = (prefix) => prefix.map((pattern) => ({ tag: "observation", pattern }));
-  return body
-    .map((p) => {
-      switch (p.tag) {
-        case "observation": {
-          let { prefix, relation } = dotExpandRelation(p.pattern);
-          return fix(prefix).concat([{ tag: "observation", pattern: relation }]);
-        }
-        case "assert": {
-          let { prefix, relation } = dotExpandRelation(p.tuple);
-          return fix(prefix).concat([{ tag: "assert", tuple: relation }]);
-        }
-        case "choose":
-          let {
-            value: { query: q },
-          } = p;
-          let { prefix, query } = dotExpandQuery(q);
-          return [{ ...p, value: { query: [...prefix, ...query] } }];
-        case "do": {
-          let { prefix, episode } = dotExpandEpisode(p.value);
-          return fix(prefix).concat([{ tag: "do", value: episode }]);
-        }
-        case "branch":
-          return {
-            ...p,
-            value: p.value.map(({ id, body }) => ({ id, body: dotExpandRuleBody(body) })),
-          };
-        case "subStory":
-          return [{ tag: "subStory", story: dotExpandRuleBody(p.story) }];
-        case "countIf":
-        case "countNot": {
-          let { prefix, query } = dotExpandQuery(p.value);
-          return [{ ...p, value: [...prefix, ...query] }];
-        }
-        case "deictic": {
-          let { prefix, term } = dotExpandTerm(p.value);
-          return [...fix(prefix), { ...p, value: term }];
-        }
-        //case "retract": {
-        //  let { prefix, query } = dotExpandQuery(p.query);
-        //  return fix(prefix).concat([{ tag: "retract", query: query }]);
-        //}
-        //case "subquery": {
-        //  let { name } = p;
-        //  let { prefix, query } = dotExpandQuery(p.query);
-        //  return [{ tag: "subquery", name, query: prefix.concat(query) }];
-        //}
-        //case "done":
-        //  return [p];
-        //case "binOp":
-        //  let r1 = dotExpandTerm(p.l);
-        //  let r2 = dotExpandTerm(p.r);
-        //  return fix(r1.prefix.concat(r2.prefix)).concat([
-        //    { ...p, l: r1.term, r: r2.term },
-        //  ]);
-        default:
-          throw "";
+  return body.map(dotExpandOperation).flat(1);
+
+  function fix(prefix) {
+    return prefix.map((pattern) => ({ tag: "observation", pattern }));
+  }
+
+  function dotExpandOperation(p) {
+    switch (p.tag) {
+      case "observation": {
+        let { prefix, relation } = dotExpandRelation(p.pattern);
+        return fix(prefix).concat([{ tag: "observation", pattern: relation }]);
       }
-    })
-    .flat(1);
+      case "assert": {
+        let { prefix, relation } = dotExpandRelation(p.tuple);
+        return fix(prefix).concat([{ tag: "assert", tuple: relation }]);
+      }
+      case "choose":
+        let {
+          value: { query: q },
+        } = p;
+        let { prefix, query } = dotExpandQuery(q);
+        return [{ ...p, value: { query: [...prefix, ...query] } }];
+      case "do": {
+        let { prefix, episode } = dotExpandEpisode(p.value);
+        return fix(prefix).concat([{ tag: "do", value: episode }]);
+      }
+      case "branch":
+        return {
+          ...p,
+          value: p.value.map(({ id, body }) => ({ id, body: dotExpandRuleBody(body) })),
+        };
+      case "subStory":
+        return [{ tag: "subStory", story: dotExpandRuleBody(p.story) }];
+      case "countIf":
+      case "countNot": {
+        let { prefix, query } = dotExpandQuery(p.value);
+        return [{ ...p, value: [...prefix, ...query] }];
+      }
+      case "deictic": {
+        let { prefix, term } = dotExpandTerm(p.value);
+        return [...fix(prefix), { ...p, value: term }];
+      }
+      case "binRel": {
+        let mapping = {
+          "=": "@eq",
+          "<": "@lt",
+          "<=": "@le",
+          ">": "@gt",
+          ">=": "@ge",
+        };
+        let tag = mapping[p.op];
+        assert(tag, "invalid operator");
+        return dotExpandOperation({
+          tag: "observation",
+          pattern: { tag, terms: [p.left, p.right, mkInt(1)] },
+        });
+      }
+      //case "retract": {
+      //  let { prefix, query } = dotExpandQuery(p.query);
+      //  return fix(prefix).concat([{ tag: "retract", query: query }]);
+      //}
+      //case "subquery": {
+      //  let { name } = p;
+      //  let { prefix, query } = dotExpandQuery(p.query);
+      //  return [{ tag: "subquery", name, query: prefix.concat(query) }];
+      //}
+      //case "done":
+      //  return [p];
+      default:
+        throw "";
+    }
+  }
 }
 function parseProgram(text) {
   function appendDone(body) {

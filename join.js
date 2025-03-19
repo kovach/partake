@@ -413,7 +413,9 @@ function evalTerm(js, location, binding, term) {
       assert(!isVar(v));
       return mkInt(-v.value);
     } else if (term.tag === "indexical") {
-      return js._is.get(term.value, location);
+      let v = js._is.get(term.value, location);
+      assert(v !== undefined, "undefined indexical variable " + term.value);
+      return v;
     } else {
       assert(term.tag === "int" || term.tag === "sym");
       return term;

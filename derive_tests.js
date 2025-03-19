@@ -13,6 +13,7 @@ import {
   ppTerm,
   Binding,
   evalTermStrict,
+  isVar,
 } from "./join.js";
 import {
   fixRules,
@@ -33,6 +34,14 @@ function timeFn(fn) {
   return x;
 }
 
+// todo move
+function valUnify(a, b) {
+  assert(!isVar(a) || !isVar(b));
+  if (!isVar(a) && !isVar(b)) return valEqual(a, b) ? [[a, b, _true]] : [];
+  if (isVar(b)) return valUnify(b, a);
+  return [[b, b, _true]];
+}
+
 function loadRules(fn) {
   Promise.all([fetch("si3.mm"), fetch("si3.sad")])
     .then((res) => Promise.all(res.map((p) => p.text())))
@@ -47,10 +56,6 @@ function parseRules(text) {
   let removeCommentFromLine = (s) => /[^#]*/.exec(s);
   let removeComments = (text) => text.split("\n").map(removeCommentFromLine).join("\n");
   return fixRules(parseNonterminal("derivation_block", removeComments(text)));
-}
-
-function tor(name, fn) {
-  return (...args) => (fn(...args) ? [[...args]] : []);
 }
 
 function loadRuleTuples(state, stories) {
@@ -106,11 +111,13 @@ class IndexicalState {
     this.map.get(node).binding.set(tag, value);
   }
   get(tag, node) {
-    return chase(this.map.get(node));
-    function chase({ binding, parent }) {
+    let chase = ({ binding, parent }) => {
+      console.log("chas: ", tag, binding, parent);
       if (binding.has(tag)) return binding.get(tag);
       if (parent) return chase(this.map.get(parent));
-    }
+    };
+    console.log("..", node);
+    return chase(this.map.get(node));
   }
 }
 
@@ -165,7 +172,7 @@ function updateBranch(ec, parent, id, label, bind, story, choice) {
   switch (op.tag) {
     case "do":
       let { name, tuples } = op.value;
-      let newChild = mkChildNode(state, mkSym(name), id);
+      let newChild = mkChildNode(state, mkSym(name), parent); // todo id
       for (let { tag, terms } of tuples) {
         let tuple = [tag, newChild, ...core(terms)];
         tuple = substitute(defs.js, location, binding, tuple, true);
@@ -248,6 +255,13 @@ function updateBranch(ec, parent, id, label, bind, story, choice) {
       is.set(id, x, location);
       console.log(":::", id, x);
       return [mkRest(binding)];
+    case "binRel": {
+      let { left, op: operator, right } = op;
+      let fns = {
+        "=": (a, b) => _,
+      };
+      throw "";
+    }
     default:
       throw "";
   }
@@ -312,6 +326,15 @@ function mainTest(stories, userRules) {
     (...args) =>
       tr([fn(...args)]);
 
+  function tor(fn) {
+    return (...args) => (fn(...args) ? [[...args]] : []);
+  }
+
+  let leFn = (a, b) => {
+    if (a.tag === "bind") return a.value.le(b.value);
+    assert(["int", "sym"].includes(a.tag));
+    return a.value <= b.value;
+  };
   let js = {
     _is: is, // todo !!!
     log: (...args) => {
@@ -320,22 +343,21 @@ function mainTest(stories, userRules) {
     initBranch: single(initBranch),
     updateBranch: (...args) => updateBranchStuck(ec, ...args),
     add: ({ value: a }, { value: b }) => mkInt(a + b),
-    eq: tor("eq", (a, b) => {
+    _eq: tor((a, b) => {
       return valEqual(a, b);
     }),
-    lt: tor("lt", (a, b) => {
+    eq: valUnify,
+    lt: tor((a, b) => {
       return a.value < b.value;
     }),
-    le: tor("le", (a, b) => {
-      if (a.tag === "bind") return a.value.le(b.value);
-      assert(["int", "sym"].includes(a.tag));
-      return a.value <= b.value;
-    }),
+    le: tor(leFn),
+    gt: tor((b, a) => a.value < b.value),
+    ge: tor((b, a) => leFn(a, b)),
     length: (a) => mkInt(a.value.length),
     story: ({ value: { body } }) => {
       return mkBox(body);
     },
-    nonemptyBody: tor("nonemptyBody", ({ value: { body } }) => {
+    nonemptyBody: tor(({ value: { body } }) => {
       return body.length > 0;
     }),
     unify: (a, b) => {
@@ -377,8 +399,8 @@ function mainTest(stories, userRules) {
     go(1, " >>> force _ 'foo {}."), //
       go(1, " >>> force _ 'foo/a {}."), // 1
       go(1, " >>> force _ 'foo/b {}."), // 1
-    go(3, " >>> force _ 'foo {}."), // 2
-    go(3, " >>> force _ 'foo {}."), // 2
+    go(8, " >>> force _ 'foo {}."), // 7
+      go(2, " >>> force _ 'bar {}."), // 7
 
     go(1, " >>> force _ 'turn1 {}."),
     go(1, " >>> force _ 'turn {}."), // 6
@@ -409,6 +431,7 @@ function mainTest(stories, userRules) {
             go(3, " >>> force _ 'move {}."), // 3
       go(3, " >>> force _ 'target-power {} {}."), //
       go(2, " >>> force _ 'activate-power {} {}."), //
+    () => 'done',
   ];
   timeFn(() => ec.solve());
   let i = 0;
@@ -466,7 +489,7 @@ function mainTest(stories, userRules) {
       "contains-tip",
     ];
     ec.print(omit);
-    console.log("db.size: ", state.dbAggregates.size()); // 1384 333
+    console.log("db.size: ", state.dbAggregates.size()); // 1425 390
     console.log(state);
   }
 }

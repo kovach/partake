@@ -100,6 +100,7 @@ event_expr -> identifier _ "[" _ pure_query _ "]" {% (d) => ({ tag: "with-tuples
 
 branch_option -> identifier _ ":" _ rule_body {% (d) => ({id:d[0], body: d[4]}) %}
 temporal_spec -> identifier {% id %}
+binRel -> "=" {% () => '=' %}
 
 episode_expr -> "~" event_expr {% (d) => [{tag: "do", value: d[1]}] %}
 episode_expr -> relation {% (d) => [{ tag: "observation", pattern: d[0]}] %}
@@ -114,7 +115,7 @@ episode_expr -> "if" _ op pure_query cp {% (d) => [{ tag: "countIf", value: d[3]
 episode_expr -> "not" _ op pure_query cp {% (d) => [{ tag: "countNot", value: d[3] }] %}
 episode_expr -> "~" identifier _ ":=" _ term
   {% (d) => [{ tag: "deictic", id: d[1], value: d[5] }] %}
-
+episode_expr -> term _ binRel _ term {% (d) => [{tag: 'binRel', op: d[2], left: d[0], right: d[4]}] %}
 
 #episode_expr -> "-" _ pure_query {% (d) => [{tag: "retract", query: d[2] }] %}
 #episode_expr -> op pure_query cp _ "=>" _ op pure_query cp {% (d) => [{ tag: "modification", before: d[1], after: d[7] }] %}
