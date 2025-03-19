@@ -187,6 +187,9 @@ class Binding {
   *entries() {
     yield* this.substitution.entries();
   }
+  *[Symbol.iterator]() {
+    yield* this.entries();
+  }
   // all keys in this appear with the same value in b
   // todo: allow vars in b (unifyLe)?
   le(b) {
@@ -218,9 +221,6 @@ class Binding {
     }
     return this.size() === b.size();
   }
-  //*[Symbol.iterator]() {
-  //  for (let k of this.substitution.keys()) yield k;
-  //}
 }
 function emptyBinding() {
   return new Binding();
@@ -324,6 +324,10 @@ function ppEpisode(e) {
     case "countNot": {
       return `not (${ppQuery(e.value)})`;
     }
+    case "deictic": {
+      let { id, value } = e;
+      return `~${id} := ${ppTerm(value)}`;
+    }
     default:
       throw "";
   }
@@ -359,6 +363,8 @@ function ppTerm(term) {
       }
     case "neg":
       return `(- ${ppTerm(term.value)})`;
+    case "indexical":
+      return `~${term.value}`;
     default:
       throw "todo";
   }
@@ -394,17 +400,20 @@ function freshId() {
 }
 
 // todo: rename/cleanup
-function evalTerm(js, binding, term) {
+function evalTerm(js, location, binding, term) {
+  let rec = (t) => evalTerm(js, location, binding, t);
   if (isLiteral(term)) {
     if (term.tag === "call") {
-      let args = term.args.map((v) => evalTerm(js, binding, v));
+      let args = term.args.map(rec);
       return js[term.fn](...args);
     } else if (term.tag === "bind") {
       return term; // todo: handle variables. change representation?
     } else if (term.tag === "neg") {
-      let v = evalTerm(js, binding, term.value);
+      let v = rec(term.value);
       assert(!isVar(v));
       return mkInt(-v.value);
+    } else if (term.tag === "indexical") {
+      return js._is.get(term.value, location);
     } else {
       assert(term.tag === "int" || term.tag === "sym");
       return term;
@@ -415,32 +424,32 @@ function evalTerm(js, binding, term) {
   return term;
 }
 
-function evalTermStrict(js, binding, term) {
-  let x = evalTerm(js, binding, term);
-  assert(!isVar(term));
+function evalTermStrict(js, location, binding, term) {
+  let x = evalTerm(js, location, binding, term);
+  assert(!isVar(x));
   return x;
 }
 
-function substituteTerm(js, binding, term) {
-  if (isLiteral(term)) return evalTerm(js, binding, term);
-  if (isHole(term)) {
-    return freshId();
-  } else {
-    assert(isVar(term));
-    let v = term.value;
-    let maybeV = binding.get(v);
-    if (maybeV !== undefined) return maybeV;
-    else {
-      let id = freshId();
-      binding.set(v, id);
-      return id;
-    }
-  }
-}
-
-function substitute(js, binding, terms) {
-  return terms.map(substituteTerm[ap](js, binding));
-}
+//function substituteTerm(js, location, binding, term) {
+//  if (isLiteral(term)) return evalTerm(js, location, binding, term);
+//  if (isHole(term)) {
+//    return freshId();
+//  } else {
+//    assert(isVar(term));
+//    let v = term.value;
+//    let maybeV = binding.get(v);
+//    if (maybeV !== undefined) return maybeV;
+//    else {
+//      let id = freshId();
+//      binding.set(v, id);
+//      return id;
+//    }
+//  }
+//}
+//
+//function substitute(js, location, binding, terms) {
+//  return terms.map(substituteTerm[ap](js, location, binding));
+//}
 
 export {
   af,
@@ -463,8 +472,8 @@ export {
   evalQuery,
   freshId,
   uniqueInt,
-  substituteTerm,
-  substitute,
+  //substituteTerm,
+  //substitute,
   ppQuery,
   ppTerm,
   ppBinding,

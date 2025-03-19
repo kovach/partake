@@ -40,6 +40,7 @@ binding -> var _ ":" _ term {% (d) => [d[0], d[4]] %}
 binding_list -> null {% () => [] %}
 binding_list -> binding (comma binding_list):? {% (d) => [d[0], ...(d[1] ? d[1][1] : [])] %}
 binding_expr -> "{" _ binding_list _ "}" {% (d) => ({tag: 'preBind', value: d[2]}) %}
+indexical_expr -> "~" identifier {% (d) => ({tag: 'indexical', value: d[1]}) %}
 
 term -> op _ "-" _ term cp {% (d) => ({tag: 'neg', value: d[4]}) %}
 term -> var {% (d) => ({tag: 'var', value: d[0]}) %}
@@ -49,6 +50,7 @@ term -> term "." identifier {% (d) => ({tag: 'dot', left: d[0], right: d[2]}) %}
 term -> "." predicate {% (d) => ({tag: 'dot', left: null, right: d[1]}) %}
 term -> fn_call {% id %}
 term -> binding_expr {% id %}
+term -> indexical_expr {% id %}
 
 # pred2 x y @fn(x)
 relation -> predicate (__ term):*               {% (d) => ({tag: d[0], terms: d[1].map(t => t[1]).concat([{tag: 'int', value: 1}])}) %}
@@ -90,6 +92,7 @@ quantifier -> op "random" _ number cp {% (d) => ({tag: 'random', count: d[3]}) %
 
 event_expr -> identifier {% (d) => ({ tag: "literal", name: d[0]}) %}
 event_expr -> identifier _ "[" _ pure_query _ "]" {% (d) => ({ tag: "with-tuples", name: d[0], tuples: d[4]}) %}
+#event_expr -> identifier _ "[" _ episode_list _ "]" {% (d) => ({ tag: "with-tuples", name: d[0], tuples: d[4]}) %}
 
 #event_expr -> op event_expr _ ";" _ event_expr cp  {% (d) => ({ tag: "concurrent", a: d[1], b: d[5]}) %}
 #event_expr -> op event_expr _ "->" _ event_expr cp {% (d) => ({ tag: "sequence", a: d[1], b: d[5]}) %}
@@ -109,6 +112,9 @@ episode_expr -> "branch" _ "(" (_ op branch_option cp):* cp
 episode_expr -> op rule_body cp {% (d) => [{tag: "subStory", story: d[1] }] %}
 episode_expr -> "if" _ op pure_query cp {% (d) => [{ tag: "countIf", value: d[3] }] %}
 episode_expr -> "not" _ op pure_query cp {% (d) => [{ tag: "countNot", value: d[3] }] %}
+episode_expr -> "~" identifier _ ":=" _ term
+  {% (d) => [{ tag: "deictic", id: d[1], value: d[5] }] %}
+
 
 #episode_expr -> "-" _ pure_query {% (d) => [{tag: "retract", query: d[2] }] %}
 #episode_expr -> op pure_query cp _ "=>" _ op pure_query cp {% (d) => [{ tag: "modification", before: d[1], after: d[7] }] %}

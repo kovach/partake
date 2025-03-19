@@ -1,5 +1,5 @@
 import { randomSample } from "./random.js";
-import { assert, range, MonoidMap, splitArray, toTag } from "./collections.js";
+import { assert, range, MonoidMap, splitArray, toTag, KeyedMap } from "./collections.js";
 import { parseNonterminal, parseProgram } from "./parse.js";
 import {
   freshId,
@@ -11,6 +11,8 @@ import {
   af,
   ppTuples,
   ppTerm,
+  Binding,
+  evalTermStrict,
 } from "./join.js";
 import {
   fixRules,
@@ -78,14 +80,41 @@ function mkNode(state, tag) {
   addAtom(state, ["node-tag", id, tag]);
   return id;
 }
+function mkRootNode(state) {
+  let tag = "game";
+  let id = mkNode(state, mkSym(tag));
+  is.node(tag, id);
+}
 function mkChildNode(state, tag, parent) {
   let newId = mkNode(state, tag);
   addAtom(state, ["contains", parent, newId]);
+  is.node(tag, newId, parent);
   return newId;
 }
 
 let _true = mkInt(1);
 let labelSep = "/";
+
+class IndexicalState {
+  map = new KeyedMap((x) => JSON.stringify(x));
+  node(tag, child, parent = null) {
+    let binding = new Binding();
+    binding.set(tag, child);
+    this.map.set(child, { binding, parent });
+  }
+  set(tag, value, node) {
+    this.map.get(node).binding.set(tag, value);
+  }
+  get(tag, node) {
+    return chase(this.map.get(node));
+    function chase({ binding, parent }) {
+      if (binding.has(tag)) return binding.get(tag);
+      if (parent) return chase(this.map.get(parent));
+    }
+  }
+}
+
+let is = new IndexicalState();
 
 function updateBranchStuck(ec, parent, id, label, bind, story, choice) {
   let r = updateBranch(ec, parent, id, label, bind, story, choice);
@@ -132,13 +161,14 @@ function updateBranch(ec, parent, id, label, bind, story, choice) {
   function mkRest(binding) {
     return mk(label, binding, rest);
   }
+  let location = parent;
   switch (op.tag) {
     case "do":
       let { name, tuples } = op.value;
       let newChild = mkChildNode(state, mkSym(name), id);
       for (let { tag, terms } of tuples) {
         let tuple = [tag, newChild, ...core(terms)];
-        tuple = substitute(defs.js, binding, tuple, true);
+        tuple = substitute(defs.js, location, binding, tuple, true);
         addAtom(state, tuple);
       }
       return [mkRest(binding)];
@@ -157,7 +187,7 @@ function updateBranch(ec, parent, id, label, bind, story, choice) {
       let { when, tuple } = op;
       let pattern = [tuple.tag].concat(tuple.terms);
       binding = binding.clone();
-      let atom = substitute(defs.js, binding, pattern, true);
+      let atom = substitute(defs.js, location, binding, pattern, true);
       if (when !== undefined) {
         throw "";
       } else {
@@ -212,6 +242,12 @@ function updateBranch(ec, parent, id, label, bind, story, choice) {
       let ok = op.tag === "countIf" ? n > 0 : n === 0;
       return ok ? [mkRest(binding)] : [];
       throw "";
+    case "deictic":
+      let { id, value } = op;
+      let x = evalTermStrict(defs.js, location, binding, value);
+      is.set(id, x, location);
+      console.log(":::", id, x);
+      return [mkRest(binding)];
     default:
       throw "";
   }
@@ -222,6 +258,8 @@ node _ id --- node id.
 
 succeeds I I' --- old I.
 node I, body I _ S, @lt 0 @length(S), old I -> 0 --- tip I.
+#contains I I', tip I' --- contains-tip I.
+#tip I, contains-tip I -> 0 --- can-advance I.
 
 ############## Updates ##############
 
@@ -275,6 +313,7 @@ function mainTest(stories, userRules) {
       tr([fn(...args)]);
 
   let js = {
+    _is: is, // todo !!!
     log: (...args) => {
       console.log("!!!!!!!!!! ", ...args);
     },
@@ -321,7 +360,7 @@ function mainTest(stories, userRules) {
   ec.init();
   let state = ec.getState();
   loadRuleTuples(state, stories);
-  mkNode(state, s`game`);
+  mkRootNode(state);
 
   /* Execute log of actions */
   // prettier-ignore
@@ -332,12 +371,14 @@ function mainTest(stories, userRules) {
       go(5, " >>> force _ 'mk-card {}."), // 5
 
     // test misc.
-    go(2, " >>> force _ 'foo {}."), // 2
+    go(1, " >>> force _ 'foo {}."), //
       go(2, " >>> force _ 'push {} {L:2}."), // 2
         go(3, " >>> force _ 'move {}."), // 3
+    go(1, " >>> force _ 'foo {}."), //
       go(1, " >>> force _ 'foo/a {}."), // 1
       go(1, " >>> force _ 'foo/b {}."), // 1
-    go(4, " >>> force _ 'foo {}."), // 2
+    go(3, " >>> force _ 'foo {}."), // 2
+    go(3, " >>> force _ 'foo {}."), // 2
 
     go(1, " >>> force _ 'turn1 {}."),
     go(1, " >>> force _ 'turn {}."), // 6
@@ -368,7 +409,6 @@ function mainTest(stories, userRules) {
             go(3, " >>> force _ 'move {}."), // 3
       go(3, " >>> force _ 'target-power {} {}."), //
       go(2, " >>> force _ 'activate-power {} {}."), //
-    () => 'done',
   ];
   timeFn(() => ec.solve());
   let i = 0;
@@ -423,9 +463,10 @@ function mainTest(stories, userRules) {
       "range",
 
       "rule",
+      "contains-tip",
     ];
     ec.print(omit);
-    console.log("db.size: ", state.dbAggregates.size()); // 1364 300
+    console.log("db.size: ", state.dbAggregates.size()); // 1384 333
     console.log(state);
   }
 }

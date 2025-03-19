@@ -25,6 +25,7 @@ function dotExpandTerm(t) {
     case "var":
     case "sym":
     case "int":
+    case "indexical":
       return { prefix: [], term: t };
     case "neg": {
       let { prefix, term } = dotExpandTerm(t.value);
@@ -154,6 +155,10 @@ function dotExpandRuleBody(body) {
         case "countNot": {
           let { prefix, query } = dotExpandQuery(p.value);
           return [{ ...p, value: [...prefix, ...query] }];
+        }
+        case "deictic": {
+          let { prefix, term } = dotExpandTerm(p.value);
+          return [...fix(prefix), { ...p, value: term }];
         }
         //case "retract": {
         //  let { prefix, query } = dotExpandQuery(p.query);

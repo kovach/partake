@@ -18,6 +18,8 @@
   ~push [ *from 1, *type 'dahan ],
   branch ( (a: ~a) (b: ~b) ),
   player P,
+  ~player := P,
+  ~foo := ~player,
   +energy P -> 2,
   if (player P),
   not (player P),

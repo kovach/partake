@@ -148,7 +148,7 @@ function evalQuery(
     let tg = tag(pattern);
     let ts = terms(pattern);
     for (let binding of context) {
-      let values = ts.map((t) => evalTerm(js, binding, t));
+      let values = ts.map((t) => evalTerm(js, location, binding, t));
       let zero = reductionOps(relationTypes, tg).zero;
       if (valEqual(weight(values), zero)) {
         // Negation case
@@ -228,6 +228,7 @@ function emptyState() {
     atomWorklist: [],
     init: true,
     dependencies: new ArrayMap(new KeyedMap(key)),
+    variables: new Map(),
   };
 }
 
@@ -285,7 +286,7 @@ let mod = {
 function mkSeminaive(r, js, relationTypes) {
   let rules = [...r];
   let state = emptyState();
-  let { dependencies, dbAtoms, dbAggregates, init } = state;
+  let { variables, dependencies, dbAtoms, dbAggregates, init } = state;
   let debug = 0;
 
   let obj = {};
@@ -434,17 +435,18 @@ function mkSeminaive(r, js, relationTypes) {
     changeBinding(x, "add");
   }
 
+  // head not allowed to use indexical terms, so `location = null` passed to substitute
   function changeBinding({ rule, binding }, mod) {
     switch (rule.type) {
       case "dyn":
         for (let terms of rule.head) {
-          changeAtom(substitute(js, binding, terms), rule.id, binding, mod);
+          changeAtom(substitute(js, null, binding, terms), rule.id, binding, mod);
         }
         break;
       case "imp":
         for (let terms of rule.head) {
           changeAtom(
-            substitute(js, binding, terms, (allowFresh = true)),
+            substitute(js, null, binding, terms, (allowFresh = true)),
             rule.id,
             binding,
             mod
@@ -452,7 +454,7 @@ function mkSeminaive(r, js, relationTypes) {
         }
         break;
       case "command":
-        evalTerm(js, binding, rule.head);
+        evalTerm(js, null, binding, rule.head);
         break;
     }
   }
@@ -536,8 +538,8 @@ function mkSeminaive(r, js, relationTypes) {
   }
 }
 
-function substituteTerm(js, binding, term, allowFresh) {
-  if (isLiteral(term)) return evalTermStrict(js, binding, term);
+function substituteTerm(js, location, binding, term, allowFresh) {
+  if (isLiteral(term)) return evalTermStrict(js, location, binding, term);
   // todo: check during parsing
   assert(isVar(term) || isHole(term));
   let v = term.value;
@@ -550,8 +552,10 @@ function substituteTerm(js, binding, term, allowFresh) {
   return result;
 }
 
-function substitute(js, binding, terms, allowFresh = false) {
-  return terms.map((v, i) => (i > 0 ? substituteTerm(js, binding, v, allowFresh) : v));
+function substitute(js, location, binding, terms, allowFresh = false) {
+  return terms.map((v, i) =>
+    i > 0 ? substituteTerm(js, location, binding, v, allowFresh) : v
+  );
 }
 
 // External interface to add/remove tuples
