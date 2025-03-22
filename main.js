@@ -8,8 +8,10 @@ import {
   episode,
   episodeDone,
   filterDone,
+  json,
   newEpisode,
   operation,
+  ppe,
   processInput,
   tip,
 } from "./episode.js";
@@ -127,19 +129,31 @@ let mkjs = () => {
   };
 };
 
-let chk = (e) => console.log(JSON.stringify(e, null, 2));
+//let chk = (e) => console.log(ppe(e));
+let chk = (e) => console.log(JSON.stringify(json(e), null, 2));
+
 function drive(prog, e) {
   let gas = 100;
   let steps = 0;
   while (steps++ < gas && canonicalEpisode(e) && !episodeDone(e)) {
-    e = processInput(prog, null, filterDone(e), {});
+    e = processInput(prog, null, filterDone(e), null);
     prog.ec.solve();
     chk(e);
   }
-  chk(filterDone(e));
+  e = filterDone(e);
   console.log("steps: ", steps);
   if (steps >= gas) throw "ran out of gas";
   return e;
+}
+
+function tob(str) {
+  let x = parseNonterminal("binding_expr", str);
+  x = new Binding(x.value);
+  return x;
+}
+
+function step(prog, e, choice) {
+  return drive(prog, processInput(prog, null, drive(prog, e), choice));
 }
 
 window.onload = () =>
@@ -152,8 +166,23 @@ window.onload = () =>
     let ec = mkSeminaive([], js, relTypes);
     ec.init();
 
+    let prog = { ec, rules };
     let e = newEpisode("game", rules.during);
-    e = timeFn(() => drive({ ec, rules }, e));
+
+    function go(e, i) {
+      return processInput(prog, null, drive(prog, e), i);
+    }
+
+    timeFn(() => {
+      e = go(e, tob("{L: 1}"));
+      e = go(e, tob("{L': 3}"));
+      e = go(e, tob("{L1: 1}"));
+      e = go(e, tob("{L2: 3}"));
+      e = drive(prog, e);
+      //e = go(e, { token: null });
+      chk(e);
+    });
+
     print();
     return;
     function print() {

@@ -1,11 +1,57 @@
 import { assert, KeyedMap } from "./collections.js";
-import { addAtom, core, substitute, weight } from "./derive.js";
+import { addAtom, core, fixQuery, substitute, weight } from "./derive.js";
 import { af, Binding, freshId, uniqueInt } from "./join.js";
+import { parseNonterminal } from "./parse.js";
+
+// todo: (pick n), random
 let Actor = {
   all: "all now",
-  any: "pick",
+  any: "any",
   seq: "<",
 };
+
+function json(e) {
+  switch (e.tag) {
+    case "node": {
+      let { tag, name, body } = e;
+      return { tag, name, body: json(body) };
+    }
+    case "branch": {
+      let { tag, actor, cases } = e;
+      return { tag, actor, cases: objMap(cases, json) };
+    }
+    case "tip": {
+      let { tag, value } = e;
+      return { tag, value };
+    }
+    case "done": {
+      let { tag } = e;
+      return { tag };
+    }
+  }
+}
+
+function ppe(e) {
+  switch (e.tag) {
+    case "node": {
+      let { tag, name, body } = e;
+      return `[${name}: ${ppe(body)}]`;
+    }
+    case "branch": {
+      let { tag, actor, cases } = e;
+      return kv(objMap(cases, ppe))
+        .map(([k, v]) => `(${k}: ${v})`)
+        .join(" ");
+    }
+    case "tip": {
+      let { tag, value } = e;
+      return JSON.stringify({ tag, value });
+    }
+    case "done": {
+      return "done";
+    }
+  }
+}
 
 let episode = {
   // branch according to actor
@@ -26,7 +72,7 @@ let operation = {
   /* + */ assert: (tuple, k) => ({ tag: "assert", tuple, k }),
   /* ~ */ do: (name, pairs, k) => ({ tag: "do", name, pairs, k }),
   /* branch */ cases: (actor, cases) => ({ tag: "cases", actor, cases }),
-  /* choose */ choose: (actor, value, k) => ({ actor, value, k }),
+  /* choose */ choose: (actor, value, k) => ({ tag: "choose", actor, value, k }),
   /* ~x := y */ deixis: (id, term) => ({ id, term }),
 
   // todo
@@ -57,7 +103,7 @@ function v(o) {
 }
 
 function getActor(tag) {
-  return Actor.any; // todo allow custom
+  return Actor.seq; // todo allow custom
 }
 
 function newVars(parent) {
@@ -70,7 +116,7 @@ function setIndexical(tag, value, node) {
 
 function newEpisode(tag, during, parent = null) {
   // todo check order
-  let bodies = during.get(tag);
+  let bodies = during.get(tag).reverse();
   let cases = {};
   for (let { id, body } of bodies) {
     if (cases[id]) id = id + uniqueInt(); // TODO
@@ -91,6 +137,7 @@ function processInput(ec, parent, episode, input) {
       return episode;
     case "tip":
       let { value } = episode;
+      //if (input !== null) debugger;
       if (canonicalOperation(value.operation)) {
         ////todo
         //assert(input.length === 0);
@@ -98,17 +145,20 @@ function processInput(ec, parent, episode, input) {
         return stepTip(ec, parent, value, null);
       }
       //assert(input.length === 1);
-      let [choice] = input;
-      debugger;
-      return stepTip(ec, parent, value, choice);
+      //let [choice] = input;
+      return stepTip(ec, parent, value, input);
     case "branch": {
       let { actor, cases } = episode;
-      let def = () => ({
-        ...episode,
-        cases: objMap(cases, (child, key) =>
-          input[key] ? processInput(ec, parent, child, input[key]) : { ...child }
-        ),
-      });
+      let def = () => {
+        assert(kv(cases).some(([k, _v]) => input[k]));
+        let x = {
+          ...episode,
+          cases: objMap(cases, (child, key) =>
+            input[key] ? processInput(ec, parent, child, input[key]) : { ...child }
+          ),
+        };
+        return x;
+      };
       switch (actor) {
         case Actor.any:
           let x = kv(cases).filter(([_k, x]) => !episodeDone(x));
@@ -239,8 +289,8 @@ function convertToNewOp(operations) {
       debugger;
   }
 }
-function canonicalOperation(operation) {
-  switch (operation.tag) {
+function canonicalOperation(op) {
+  switch (op.tag) {
     case "op/done": // needs to convert into episode.done
     case "cases": // just convert
     case "observation":
@@ -249,6 +299,7 @@ function canonicalOperation(operation) {
     case "deixis":
       return true;
     case "choose":
+      return false; // todo
       debugger;
     default:
       debugger;
@@ -257,6 +308,10 @@ function canonicalOperation(operation) {
 function filterDone(episode) {
   switch (episode.tag) {
     case "branch":
+      let vs = v(episode.cases);
+      if (vs.length === 1) {
+        return filterDone(vs[0]);
+      }
       return {
         ...episode,
         cases: objFilterMap(episode.cases, (v) =>
@@ -326,7 +381,7 @@ function stepTip({ ec, rules }, parentNode, { binding, operation }, choice) {
       if (bindings.length === 0) {
         return done();
       } else {
-        let tips = bindings.map((binding) => episode.tip(tip.mk(binding, k)));
+        let tips = bindings.map((b) => tp(b, k));
         return episode.branch(Actor.all, tips);
       }
     }
@@ -337,11 +392,9 @@ function stepTip({ ec, rules }, parentNode, { binding, operation }, choice) {
         objMap(cases, (c) => episode.tip(tip.mk(binding, c)))
       );
     }
-
     case "choose": {
-      throw "";
       let bindings;
-      let { value, k } = operation;
+      let { actor, value, k } = operation;
       // initially solve query, or filter options based on `choice`
       if (value.query) {
         let query = fixQuery(value.query);
@@ -350,21 +403,26 @@ function stepTip({ ec, rules }, parentNode, { binding, operation }, choice) {
         assert(value.options);
         bindings = value.options;
       }
-      bindings = bindings.filter((b) => choice.value.unify(b));
-      let { quantifier } = op;
-      switch (quantifier.tag) {
+      let initialLength = bindings.length;
+      bindings = bindings.filter((b) => choice.le(b));
+      //assert(bindings.length < initialLength, "irrelevant choice");
+      //debugger;
+      switch (actor.tag) {
         case "eq":
-          assert(bindings.length >= quantifier.count, "invalid choice");
-          if (bindings.length === quantifier.count) {
-            return bindings.map(mkRest);
+          assert(bindings.length >= actor.count, "invalid choice");
+          if (bindings.length === actor.count) {
+            return episode.branch(
+              Actor.all,
+              bindings.map((b) => tp(b, k))
+            );
           }
           break;
         case "random":
+          debugger;
           bindings = randomSample(bindings, quantifier.count);
           return bindings.map(mkRest);
       }
-      let newOp = { ...op, value: { options: bindings } };
-      return [mk(label, binding, [newOp, ...rest])];
+      return tp(binding, { ...operation, value: { options: bindings } });
     }
     default:
       debugger;
@@ -386,4 +444,6 @@ export {
   canonicalEpisode,
   processInput,
   filterDone,
+  json,
+  ppe,
 };
