@@ -92,6 +92,8 @@ derivation_block -> (_ _derivation):* _ {% (d) => d[0].map((r) => r[1]) %}
 #
 quantifier -> number {% (d) => ({tag: 'eq', count: d[0]}) %}
 quantifier -> op "random" _ number cp {% (d) => ({tag: 'random', count: d[3]}) %}
+quantifier -> "any" {% (d) => ({tag: 'any'}) %}
+quantifier -> "all" {% (d) => ({tag: 'all'}) %}
 #quantifier -> "~" _ number {% (d) => ({tag: 'amapLimit', count: d[2]}) %}
 #quantifier -> "max" _ number {% (d) => ({tag: 'limit', count: d[2]}) %}
 

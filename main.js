@@ -4,10 +4,12 @@ import { mkInt, mkBox, mkBind, valEqual, af, Binding, isVar } from "./join.js";
 import { mkSeminaive } from "./derive.js";
 import {
   Actor,
-  canonicalEpisode,
+  canonUpdate,
   episode,
   episodeDone,
   filterDone,
+  Input,
+  intoUpdate,
   json,
   newEpisode,
   operation,
@@ -129,15 +131,17 @@ let mkjs = () => {
   };
 };
 
-//let chk = (e) => console.log(ppe(e));
 let chk = (e, str = "") => console.log(str, JSON.stringify(json(e), null, 2));
 
 function drive(prog, e, print = true) {
   let gas = 100;
   let steps = 0;
   if (print) chk(e, "start: ");
-  while (steps++ < gas && canonicalEpisode(e) && !episodeDone(e)) {
-    e = processInput(prog, null, filterDone(e), null);
+  while (steps++ < gas && !episodeDone(e)) {
+    e = filterDone(e);
+    let u = canonUpdate(e);
+    if (!u) break;
+    e = processInput(prog, null, e, u);
     prog.ec.solve();
     if (print) chk(e);
   }
@@ -151,10 +155,6 @@ function tob(str) {
   let x = parseNonterminal("binding_expr", str);
   x = new Binding(x.value);
   return x;
-}
-
-function step(prog, e, choice) {
-  return drive(prog, processInput(prog, null, drive(prog, e), choice));
 }
 
 window.onload = () =>
@@ -171,44 +171,31 @@ window.onload = () =>
     let e = newEpisode("game", rules.during);
 
     function go(e, i) {
-      return processInput(prog, null, drive(prog, e), i);
+      e = drive(prog, e, false);
+      return processInput(prog, null, e, intoUpdate(i, e));
     }
     timeFn(() => {
+      // {enemy} later rule first
       e = go(e, tob("{L: 1}"));
-      e = go(e, tob("{L': 3}"));
-      e = drive(prog, e, false);
+      e = go(e, tob("{L': 2}"));
+      // {token}
       e = go(e, tob("{L1: 1}"));
       e = go(e, tob("{L2: 3}"));
-      e = go(e, { foo1: null, foo2: null });
+      e = go(e, { foo1: Input.poke, foo2: Input.poke });
+      //or: e = go(e, { bar1: Input.poke, bar2: Input.poke, bar3: Input.stop });
+      e = go(e, { bar1: Input.poke, bar2: Input.poke });
+      e = go(e, { bar3: Input.stop });
+      e = go(e, { bar1: Input.poke, bar2: Input.poke });
 
       // always
       e = drive(prog, e, true);
+      chk(e);
       prog.ec.solve();
     });
 
     print();
     return;
     function print() {
-      let omit = [
-        "reach",
-        "remaining-steps",
-        "contains",
-        "old",
-        "node",
-        "is-branch",
-        "force",
-        "succeeds",
-        "body",
-        "node-tag",
-        "label",
-
-        "land",
-        "adjacent",
-        "adjacent-land",
-        "range",
-
-        "rule",
-      ];
       ec.print([]);
       console.log("db.size: ", ec.getState().dbAggregates.size()); // 1426 390
     }

@@ -14,6 +14,7 @@ game:
 
 {token} turn:
   +asdf1,
+  ~turn1,
   choose 1 (token X, located X -> L1),
   choose 1 (location L2),
   +located X -> L2,
@@ -23,8 +24,16 @@ game:
     ( foo2: +bar2 )
     ( foo3: +bar3 )
   ),
+  branch any (
+    ( bar1: +bar21 )
+    ( bar2: +bar22 )
+    ( bar3: +bar23 )
+  ),
   +asdf2,
   .
+
+turn1: +bar.
+turn1: +baz.
 
 {enemy} turn:
   choose 1 (enemy X, located X -> L),
