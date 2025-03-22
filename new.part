@@ -4,11 +4,13 @@ game:
   +location 3,
   ( location X,
     +token Y,
+    # episode structure mistake!
     +located Y -> X ),
   ~turn,
   .
 
 turn:
   token X,
-  +foo X ~turn,
+  token Y,
+  +foo X Y,
   .
