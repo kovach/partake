@@ -11,7 +11,7 @@ import {
   Input,
   intoUpdate,
   json,
-  newEpisode,
+  newRootEpisode,
   operation,
   ppe,
   processInput,
@@ -157,8 +157,9 @@ function tob(str) {
   return x;
 }
 
-window.onload = () =>
-  loadSeveral(["new.part"], ([t]) => {
+function t1() {
+  return loadSeveral(["new.part"], ([t]) => {
+    //return loadSeveral(["test_ind.part"], ([t]) => {
     let rules = parseProgram(t);
     console.log(t);
 
@@ -168,7 +169,7 @@ window.onload = () =>
     ec.init();
 
     let prog = { ec, rules };
-    let e = newEpisode("game", rules.during);
+    let e = newRootEpisode(ec.defs, rules.during);
 
     function go(e, i) {
       e = drive(prog, e, false);
@@ -200,3 +201,40 @@ window.onload = () =>
       console.log("db.size: ", ec.getState().dbAggregates.size()); // 1426 390
     }
   });
+}
+
+function t2() {
+  return loadSeveral(["test_ind.part"], ([t]) => {
+    //return loadSeveral(["test_ind.part"], ([t]) => {
+    let rules = parseProgram(t);
+    console.log(t);
+
+    /* begin */
+    var js = mkjs();
+    let ec = mkSeminaive([], js, relTypes);
+    ec.init();
+
+    let prog = { ec, rules };
+    let e = newRootEpisode(ec.defs, rules.during);
+
+    function go(e, i) {
+      e = drive(prog, e, false);
+      return processInput(prog, null, e, intoUpdate(i, e));
+    }
+    timeFn(() => {
+      // always
+      e = drive(prog, e, true);
+      chk(e);
+      prog.ec.solve();
+    });
+
+    print();
+    return;
+    function print() {
+      ec.print([]);
+      console.log("db.size: ", ec.getState().dbAggregates.size()); // 1426 390
+    }
+  });
+}
+
+window.onload = t2;

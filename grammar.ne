@@ -98,7 +98,8 @@ quantifier -> "all" {% (d) => ({tag: 'all'}) %}
 #quantifier -> "max" _ number {% (d) => ({tag: 'limit', count: d[2]}) %}
 
 event_expr -> identifier {% (d) => ({ tag: "literal", name: d[0], tuples: []}) %}
-event_expr -> identifier _ "[" _ pure_query _ "]" {% (d) => ({ tag: "with-tuples", name: d[0], tuples: d[4]}) %}
+event_expr -> identifier _ "[" _ indexical_list _ "]" {% (d) => ({ tag: "with-tuples", name: d[0], tuples: d[4]}) %}
+#event_expr -> identifier _ "[" _ pure_query _ "]" {% (d) => ({ tag: "with-tuples", name: d[0], tuples: d[4]}) %}
 #event_expr -> identifier _ "[" _ episode_list _ "]" {% (d) => ({ tag: "with-tuples", name: d[0], tuples: d[4]}) %}
 
 #event_expr -> op event_expr _ ";" _ event_expr cp  {% (d) => ({ tag: "concurrent", a: d[1], b: d[5]}) %}
@@ -126,6 +127,8 @@ episode_expr -> indexical_stmt {% (d) => [d[0]] %}
 #
 
 indexical_stmt -> "~" identifier _ ":=" _ term {% (d) => ({ tag: "deictic", id: d[1], value: d[5] }) %}
+indexical_list -> indexical_stmt (_ ","):? {% (d) => [d[0]] %}
+indexical_list -> indexical_stmt comma indexical_list {% (d) => [d[0], ...d[2]] %}
 
 #episode_expr -> "-" _ pure_query {% (d) => [{tag: "retract", query: d[2] }] %}
 #episode_expr -> op pure_query cp _ "=>" _ op pure_query cp {% (d) => [{ tag: "modification", before: d[1], after: d[7] }] %}

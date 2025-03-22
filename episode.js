@@ -97,7 +97,11 @@ function setIndexical(tag, value, node) {
   node.vars.binding.set(tag, value);
 }
 
-function newEpisode(tag, during, parent = null) {
+function newRootEpisode(defs, during) {
+  return newEpisode(defs, new Binding(), "game", during, [], null);
+}
+
+function newEpisode(defs, binding, tag, during, is, parent = null) {
   let bodies = during.get(tag).reverse();
   let cases = {};
   for (let { id, body } of bodies) {
@@ -106,6 +110,10 @@ function newEpisode(tag, during, parent = null) {
   }
   let node = episode.node(tag, episode.branch(getActor(tag), cases), newVars(parent));
   setIndexical(tag, node.id, node);
+  for (let { id, term } of is) {
+    let x = evalTermStrict(defs.js, node, binding, term);
+    setIndexical(id, x, node);
+  }
   return node;
 }
 
@@ -321,7 +329,7 @@ function stepTip({ ec, rules }, parentNode, { binding, operation }, choice) {
     case "do":
       let { name, pairs, k } = operation;
       // todo: substitute pairs
-      let it = newEpisode(name, rules.during, parentNode);
+      let it = newEpisode(ec.defs, binding, name, rules.during, pairs, parentNode);
       return episode.seq(it, tp(binding, k));
     case "assert": {
       let {
@@ -499,7 +507,7 @@ export {
   tip,
   episodeDone,
   convertToNewOp,
-  newEpisode,
+  newRootEpisode,
   processInput,
   filterDone,
   json,
