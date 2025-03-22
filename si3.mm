@@ -29,6 +29,8 @@
 
 bar: ~game = ~bar, +zzz ~game.
 
+aaaaaaaaaaaaaaaaaaa!: ~bar.
+
 {turn} turn:
   ~spirit-phase,
   ~power-phase,

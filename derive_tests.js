@@ -1,5 +1,13 @@
 import { randomSample } from "./random.js";
-import { assert, range, MonoidMap, splitArray, toTag, KeyedMap } from "./collections.js";
+import {
+  assert,
+  range,
+  MonoidMap,
+  splitArray,
+  toTag,
+  KeyedMap,
+  enumerate,
+} from "./collections.js";
 import { parseNonterminal, parseProgram } from "./parse.js";
 import {
   freshId,
@@ -24,6 +32,21 @@ import {
   fixQuery,
   addAtom,
 } from "./derive.js";
+import {
+  Actor,
+  canonicalEpisode,
+  episode,
+  episodeDone,
+  filterDone,
+  newEpisode,
+  operation,
+  processInput,
+  tip,
+} from "./episode.js";
+
+Map.prototype.toJSON = function () {
+  return Object.fromEntries(this);
+};
 
 function timeFn(fn) {
   let t0 = performance.now();
@@ -42,7 +65,14 @@ function valUnify(a, b) {
   return [[b, b, _true]];
 }
 
+function loadSeveral(files, fn) {
+  Promise.all(files.map((f) => fetch(f)))
+    .then((res) => Promise.all(res.map((p) => p.text())))
+    .then((xs) => fn(xs));
+}
+
 function loadRules(fn) {
+  throw "";
   Promise.all([fetch("si3.mm"), fetch("si3.sad")])
     .then((res) => Promise.all(res.map((p) => p.text())))
     .then(([t1, t2]) => fn(parseProgram(t1), parseRules(t2)));
@@ -99,29 +129,6 @@ function mkChildNode(state, tag, parent) {
 
 let _true = mkInt(1);
 let labelSep = "/";
-
-class IndexicalState {
-  map = new KeyedMap((x) => JSON.stringify(x));
-  node(tag, child, parent = null) {
-    let binding = new Binding();
-    binding.set(tag, child);
-    this.map.set(child, { binding, parent });
-  }
-  set(tag, value, node) {
-    this.map.get(node).binding.set(tag, value);
-  }
-  get(tag, node) {
-    let chase = ({ binding, parent }) => {
-      console.log("chas: ", tag, binding, parent);
-      if (binding.has(tag)) return binding.get(tag);
-      if (parent) return chase(this.map.get(parent));
-    };
-    console.log("..", node);
-    return chase(this.map.get(node));
-  }
-}
-
-let is = new IndexicalState();
 
 function updateBranchStuck(ec, parent, id, label, bind, story, choice) {
   let r = updateBranch(ec, parent, id, label, bind, story, choice);
@@ -255,13 +262,6 @@ function updateBranch(ec, parent, id, label, bind, story, choice) {
       is.set(id, x, location);
       console.log(":::", id, x);
       return [mkRest(binding)];
-    case "binRel": {
-      let { left, op: operator, right } = op;
-      let fns = {
-        "=": (a, b) => _,
-      };
-      throw "";
-    }
     default:
       throw "";
   }
@@ -272,7 +272,8 @@ node _ id --- node id.
 
 succeeds I I' --- old I.
 node I, body I _ S, @lt 0 @length(S), old I -> 0 --- tip I.
-#contains I I', tip I' --- contains-tip I.
+tip I --- contains-tip I.
+contains I I', contains-tip I' --- contains-tip I.
 #tip I, contains-tip I -> 0 --- can-advance I.
 
 ############## Updates ##############
@@ -282,6 +283,10 @@ node I, body I _ S, @lt 0 @length(S), old I -> 0 --- tip I.
 node-tag I T, rule name T 'during Body, @initBranch name Body L
 >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 node I', contains I I', body I' {} Body, label I' L.
+
+1 = 2, node-tag I T, rule name T 'after Body, @initBranch name Body L
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+@foo.
 
 ### Branch Update
 
@@ -303,21 +308,21 @@ tip I, label I L, body I B S, contains P I --- z I P L B S.
 label I 'stuck, succeeds I' I, body I' _ S --- stuck I S.
 `;
 
+let relTypes = {
+  located: "last",
+  owner: "last",
+
+  delay: "max",
+  "next-delay": "min",
+  "max-tip": "max",
+  range: "min",
+
+  steps: "num",
+  forceSteps: "num",
+  energy: "num",
+  "card-plays": "num",
+};
 function mainTest(stories, userRules) {
-  let relTypes = {
-    located: "last",
-    owner: "last",
-
-    delay: "max",
-    "next-delay": "min",
-    "max-tip": "max",
-    range: "min",
-
-    steps: "num",
-    forceSteps: "num",
-    energy: "num",
-    "card-plays": "num",
-  };
   let derivations = parseRules(mainProgram);
 
   let tr = (x) => x.map((x) => [...x, _true]);
@@ -486,12 +491,143 @@ function mainTest(stories, userRules) {
       "range",
 
       "rule",
-      "contains-tip",
     ];
     ec.print(omit);
-    console.log("db.size: ", state.dbAggregates.size()); // 1425 390
+    console.log("db.size: ", state.dbAggregates.size()); // 1426 390
     console.log(state);
   }
 }
 
-window.onload = () => loadRules(main);
+function mainFoo() {
+  let b = new Binding();
+  function tp(o) {
+    return episode.tip(tip.mk(b, o));
+  }
+  let turn = operation.do("turn", []);
+  let done = episode.done();
+  let es = [
+    episode.done(),
+    tp(turn),
+    episode.branch(Actor.seq, []),
+    episode.branch(Actor.seq, { a: episode.done() }),
+    episode.branch(Actor.seq, { a: tp(turn) }),
+    episode.branch(Actor.any, { a: tp(turn), b: tp(turn) }),
+    episode.branch(Actor.any, { a: done, b: tp(turn) }),
+    episode.branch(Actor.all, { a: done, b: tp(turn) }),
+  ];
+  // 5x true false 2x true
+  for (let e of es) {
+    //console.log(JSON.stringify(e), episodeDone(e));
+    console.log(e.canonical());
+    //console.log(JSON.stringify(e), e.canonical());
+  }
+}
+
+let mkjs = (ec) => {
+  let single =
+    (fn) =>
+    (...args) =>
+      tr([fn(...args)]);
+
+  function tor(fn) {
+    return (...args) => (fn(...args) ? [[...args]] : []);
+  }
+
+  let leFn = (a, b) => {
+    if (a.tag === "bind") return a.value.le(b.value);
+    assert(["int", "sym"].includes(a.tag));
+    return a.value <= b.value;
+  };
+  return {
+    //_is: is, // todo !!!
+    log: (...args) => {
+      console.log("!!!!!!!!!! ", ...args);
+    },
+    initBranch: single(initBranch),
+    updateBranch: (...args) => updateBranchStuck(ec, ...args),
+    add: ({ value: a }, { value: b }) => mkInt(a + b),
+    _eq: tor((a, b) => {
+      return valEqual(a, b);
+    }),
+    eq: valUnify,
+    lt: tor((a, b) => {
+      return a.value < b.value;
+    }),
+    le: tor(leFn),
+    gt: tor((b, a) => a.value < b.value),
+    ge: tor((b, a) => leFn(a, b)),
+    length: (a) => mkInt(a.value.length),
+    story: ({ value: { body } }) => {
+      return mkBox(body);
+    },
+    nonemptyBody: tor(({ value: { body } }) => {
+      return body.length > 0;
+    }),
+    unify: (a, b) => {
+      let out = a.value.unify(b.value);
+      if (out) {
+        //console.log("UNIFY: ", ppTerm(out));
+        return [[a, b, mkBind(out), _true]];
+      }
+      return [];
+    },
+  };
+};
+
+let chk = (e) => console.log(JSON.stringify(e, null, 2));
+function drive(prog, e) {
+  let gas = 100;
+  let steps = 0;
+  while (steps++ < gas && canonicalEpisode(e) && !episodeDone(e)) {
+    e = processInput(prog, null, filterDone(e), {});
+    prog.ec.solve();
+    chk(e);
+  }
+  chk(filterDone(e));
+  console.log("steps: ", steps);
+  if (steps >= gas) throw "ran out of gas";
+  return e;
+}
+
+//window.onload = () => loadRules(main);
+window.onload = () =>
+  loadSeveral(["new.part"], ([t]) => {
+    let rules = parseProgram(t);
+    console.log(t);
+
+    /* begin */
+    var js = {};
+    let ec = mkSeminaive([], js, relTypes);
+    Object.assign(js, mkjs(ec));
+    ec.init();
+
+    let e = newEpisode("game", rules.during);
+    e = timeFn(() => drive({ ec, rules }, e));
+    print();
+    return;
+    function print() {
+      let omit = [
+        //"foo",
+        "reach",
+        "remaining-steps",
+        "contains",
+        "old",
+        "node",
+        "is-branch",
+        "force",
+        "succeeds",
+        "body",
+        "node-tag",
+        "label",
+
+        "land",
+        "adjacent",
+        "adjacent-land",
+        "range",
+
+        "rule",
+      ];
+      ec.print(omit);
+      console.log("db.size: ", ec.getState().dbAggregates.size()); // 1426 390
+    }
+  });

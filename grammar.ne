@@ -52,9 +52,14 @@ term -> fn_call {% id %}
 term -> binding_expr {% id %}
 term -> indexical_expr {% id %}
 
+binRel -> "=" {% () => '=' %}
+
 # pred2 x y @fn(x)
-relation -> predicate (__ term):*               {% (d) => ({tag: d[0], terms: d[1].map(t => t[1]).concat([{tag: 'int', value: 1}])}) %}
-relation -> predicate (__ term):* _ "->" _ term {% (d) => ({tag: d[0], terms: d[1].map(t => t[1]).concat([d[5]])}) %}
+relation -> predicate (__ term):*               {% (d) => ({tag: d[0],  terms: d[1].map(t => t[1]).concat([{tag: 'int', value: 1}])}) %}
+relation -> predicate (__ term):* _ "->" _ term {% (d) => ({tag: d[0],  terms: d[1].map(t => t[1]).concat([d[5]])}) %}
+relation -> term _ "=" _ term                   {% (d) => ({tag: '@eq', terms: [d[0], d[4], {tag: 'int', value: 1}]}) %}
+relation -> term _ "<" _ term                   {% (d) => ({tag: '@lt', terms: [d[0], d[4], {tag: 'int', value: 1}]}) %}
+relation -> term _ "<=" _ term                   {% (d) => ({tag: '@le', terms: [d[0], d[4], {tag: 'int', value: 1}]}) %}
 
 # p2 x y, p1 z, foo
 relation_list -> relation (_ ","):? {% (d) => [d[0]] %}
@@ -90,7 +95,7 @@ quantifier -> op "random" _ number cp {% (d) => ({tag: 'random', count: d[3]}) %
 #quantifier -> "~" _ number {% (d) => ({tag: 'amapLimit', count: d[2]}) %}
 #quantifier -> "max" _ number {% (d) => ({tag: 'limit', count: d[2]}) %}
 
-event_expr -> identifier {% (d) => ({ tag: "literal", name: d[0]}) %}
+event_expr -> identifier {% (d) => ({ tag: "literal", name: d[0], tuples: []}) %}
 event_expr -> identifier _ "[" _ pure_query _ "]" {% (d) => ({ tag: "with-tuples", name: d[0], tuples: d[4]}) %}
 #event_expr -> identifier _ "[" _ episode_list _ "]" {% (d) => ({ tag: "with-tuples", name: d[0], tuples: d[4]}) %}
 
@@ -100,7 +105,6 @@ event_expr -> identifier _ "[" _ pure_query _ "]" {% (d) => ({ tag: "with-tuples
 
 branch_option -> identifier _ ":" _ rule_body {% (d) => ({id:d[0], body: d[4]}) %}
 temporal_spec -> identifier {% id %}
-binRel -> "=" {% () => '=' %}
 
 episode_expr -> "~" event_expr {% (d) => [{tag: "do", value: d[1]}] %}
 episode_expr -> relation {% (d) => [{ tag: "observation", pattern: d[0]}] %}
@@ -109,13 +113,15 @@ episode_expr -> "+[" _ temporal_spec _ "]" _ relation
   {% (d) => [{tag: "assert", when: d[2], tuple: d[6] }] %}
 episode_expr -> "choose" __ quantifier __ op pure_query cp {% (d) => [{ tag: "choose", quantifier: d[2], value: {query: d[5]} }] %}
 episode_expr -> "branch" _ "(" (_ op branch_option cp):* cp
-  {% (d) => [{ tag: "branch", value: d[3].map((d) => d[2]) }] %}
+  {% (d) => [{ tag: "branch", quantifier: null, value: d[3].map((d) => d[2]) }] %}
+episode_expr -> "branch" _ quantifier _ "(" (_ op branch_option cp):* cp
+  {% (d) => [{ tag: "branch", quantifier: d[2], value: d[5].map((d) => d[2]) }] %}
 episode_expr -> op rule_body cp {% (d) => [{tag: "subStory", story: d[1] }] %}
 episode_expr -> "if" _ op pure_query cp {% (d) => [{ tag: "countIf", value: d[3] }] %}
 episode_expr -> "not" _ op pure_query cp {% (d) => [{ tag: "countNot", value: d[3] }] %}
 episode_expr -> "~" identifier _ ":=" _ term
   {% (d) => [{ tag: "deictic", id: d[1], value: d[5] }] %}
-episode_expr -> term _ binRel _ term {% (d) => [{tag: 'binRel', op: d[2], left: d[0], right: d[4]}] %}
+# episode_expr -> term _ binRel _ term {% (d) => [{tag: 'binRel', op: d[2], left: d[0], right: d[4]}] %}
 
 #episode_expr -> "-" _ pure_query {% (d) => [{tag: "retract", query: d[2] }] %}
 #episode_expr -> op pure_query cp _ "=>" _ op pure_query cp {% (d) => [{ tag: "modification", before: d[1], after: d[7] }] %}

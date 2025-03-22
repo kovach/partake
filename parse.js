@@ -1,6 +1,7 @@
 import grammar from "./grammar.js";
 import { ArrayMap, assert, unzip, zip } from "./collections.js";
 import { Binding, mkBind, mkInt, mkVar, uniqueInt } from "./join.js";
+import { convertToNewOp } from "./episode.js";
 
 function parseNonterminal(nt, text) {
   let assertAmbiguity = true;
@@ -164,21 +165,21 @@ function dotExpandRuleBody(body) {
         let { prefix, term } = dotExpandTerm(p.value);
         return [...fix(prefix), { ...p, value: term }];
       }
-      case "binRel": {
-        let mapping = {
-          "=": "@eq",
-          "<": "@lt",
-          "<=": "@le",
-          ">": "@gt",
-          ">=": "@ge",
-        };
-        let tag = mapping[p.op];
-        assert(tag, "invalid operator");
-        return dotExpandOperation({
-          tag: "observation",
-          pattern: { tag, terms: [p.left, p.right, mkInt(1)] },
-        });
-      }
+      //case "binRel": {
+      //  let mapping = {
+      //    "=": "@eq",
+      //    "<": "@lt",
+      //    "<=": "@le",
+      //    ">": "@gt",
+      //    ">=": "@ge",
+      //  };
+      //  let tag = mapping[p.op];
+      //  assert(tag, "invalid operator");
+      //  return dotExpandOperation({
+      //    tag: "observation",
+      //    pattern: { tag, terms: [p.left, p.right, mkInt(1)] },
+      //  });
+      //}
       //case "retract": {
       //  let { prefix, query } = dotExpandQuery(p.query);
       //  return fix(prefix).concat([{ tag: "retract", query: query }]);
@@ -196,22 +197,6 @@ function dotExpandRuleBody(body) {
   }
 }
 function parseProgram(text) {
-  function appendDone(body) {
-    if (body.length === 0) return [{ tag: "done" }];
-    //let last = body[body.length - 1];
-    //if (last.tag !== "done" && last.tag !== "do") return body.concat([{ tag: "done" }]);
-    return body;
-  }
-  function fixBody(body) {
-    return dotExpandRuleBody(appendDone(body));
-  }
-  // filter comments. todo: lexer
-  function fixLines(lines) {
-    let removeCommentFromLine = (s) => /[^#]*/.exec(s)[0];
-    lines = lines.map(removeCommentFromLine);
-    lines = takeWhile(lines, (line) => line !== "exit.");
-    return lines;
-  }
   text = fixLines(text.split("\n")).join("\n");
   let exprs = parseNonterminal("program", text);
   let program = {
@@ -233,6 +218,23 @@ function parseProgram(text) {
     program[type].add(predicate, { id, body });
   }
   return program;
+
+  function appendDone(body) {
+    if (body.length === 0) return [{ tag: "done" }];
+    //let last = body[body.length - 1];
+    //if (last.tag !== "done" && last.tag !== "do") return body.concat([{ tag: "done" }]);
+    return body;
+  }
+  function fixBody(body) {
+    return convertToNewOp(dotExpandRuleBody(appendDone(body)));
+  }
+  // filter comments. todo: lexer
+  function fixLines(lines) {
+    let removeCommentFromLine = (s) => /[^#]*/.exec(s)[0];
+    lines = lines.map(removeCommentFromLine);
+    lines = takeWhile(lines, (line) => line !== "exit.");
+    return lines;
+  }
 }
 
 function takeWhile(arr, p) {

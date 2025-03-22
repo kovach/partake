@@ -198,6 +198,7 @@ class Binding {
     }
     return true;
   }
+  // todo: return json, not string
   toJSON() {
     return `{${Array.from(this.entries())
       .map(([k, v]) => k + ": " + ppTerm(v))
@@ -399,6 +400,16 @@ function freshId() {
   return mkSym(uniqueInt());
 }
 
+function getIndexical(tag, node) {
+  let chase = ({ binding, parent }) => {
+    console.log("chase: ", tag, binding, parent);
+    if (binding.has(tag)) return binding.get(tag);
+    if (parent) return chase(parent.vars);
+  };
+  //console.log("..", node);
+  return chase(node.vars);
+}
+
 // todo: rename/cleanup
 function evalTerm(js, location, binding, term) {
   let rec = (t) => evalTerm(js, location, binding, t);
@@ -413,7 +424,8 @@ function evalTerm(js, location, binding, term) {
       assert(!isVar(v));
       return mkInt(-v.value);
     } else if (term.tag === "indexical") {
-      let v = js._is.get(term.value, location);
+      //let v = js._is.get(term.value, location);
+      let v = getIndexical(term.value, location);
       assert(v !== undefined, "undefined indexical variable " + term.value);
       return v;
     } else {

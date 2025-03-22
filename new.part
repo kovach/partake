@@ -1,0 +1,14 @@
+game:
+  +location 1,
+  +location 2,
+  +location 3,
+  ( location X,
+    +token Y,
+    +located Y -> X ),
+  ~turn,
+  .
+
+turn:
+  token X,
+  +foo X ~turn,
+  .

@@ -104,6 +104,7 @@ function evalQuery(
           yield [t, ...x];
         }
         break;
+      // todo: remove
       case "*":
         for (let [core, weight] of db.ofTag(t)) {
           let t2 = tag(core);

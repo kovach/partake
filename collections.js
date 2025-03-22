@@ -53,11 +53,18 @@ function zip(as, bs) {
   for (let i = 0; i < Math.min(as.length, bs.length); i++) result.push([as[i], bs[i]]);
   return result;
 }
+function enumerate(xs) {
+  return zip(range(xs.length), xs);
+}
 
 function splitArray(arr) {
   assert(arr.length > 0);
   return [arr[0], arr.slice(1)];
 }
+
+Array.prototype.split = function () {
+  return splitArray(this);
+};
 
 Map.prototype.map = function (f) {
   let m = new Map();
@@ -168,4 +175,5 @@ export {
   range,
   unzip,
   zip,
+  enumerate,
 };
