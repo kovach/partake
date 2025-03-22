@@ -113,7 +113,7 @@ episode_expr -> "+[" _ temporal_spec _ "]" _ relation
   {% (d) => [{tag: "assert", when: d[2], tuple: d[6] }] %}
 episode_expr -> "choose" __ quantifier __ op pure_query cp {% (d) => [{ tag: "choose", quantifier: d[2], value: {query: d[5]} }] %}
 episode_expr -> "branch" _ "(" (_ op branch_option cp):* cp
-  {% (d) => [{ tag: "branch", quantifier: null, value: d[3].map((d) => d[2]) }] %}
+  {% (d) => [{ tag: "branch", quantifier: {tag: 'eq', count: 1}, value: d[3].map((d) => d[2]) }] %}
 episode_expr -> "branch" _ quantifier _ "(" (_ op branch_option cp):* cp
   {% (d) => [{ tag: "branch", quantifier: d[2], value: d[5].map((d) => d[2]) }] %}
 episode_expr -> op rule_body cp {% (d) => [{tag: "subStory", story: d[1] }] %}

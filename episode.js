@@ -3,13 +3,6 @@ import { addAtom, core, fixQuery, substitute, weight } from "./derive.js";
 import { af, Binding, freshId, uniqueInt } from "./join.js";
 import { parseNonterminal } from "./parse.js";
 
-// todo: (pick n), random
-let Actor = {
-  all: "all now",
-  any: "any",
-  seq: "<",
-};
-
 function json(e) {
   switch (e.tag) {
     case "node": {
@@ -53,6 +46,59 @@ function ppe(e) {
   }
 }
 
+function convertToNewOp(operations) {
+  if (operations.length === 0) return operation.done();
+  let [op, ...rest] = operations;
+  let k = convertToNewOp(rest);
+  function br(v) {
+    return operation.seq(v, k);
+  }
+  switch (op.tag) {
+    case "assert": {
+      let { tuple } = op;
+      return operation.assert(tuple, k);
+    }
+    case "do": {
+      let {
+        value: { name, tuples },
+      } = op;
+      return operation.do(name, tuples, k);
+    }
+    case "observation": {
+      let { pattern } = op;
+      return operation.observation(pattern, k);
+    }
+    case "choose": {
+      let { quantifier, value } = op;
+      return operation.choose(quantifier, value, k);
+    }
+    case "branch": {
+      let { quantifier, value } = op;
+      return br(
+        operation.cases(
+          quantifier,
+          Object.fromEntries(value.map(({ id, body }) => [id, convertToNewOp(body)]))
+        )
+      );
+    }
+    case "subStory": {
+      let { story } = op;
+      return br(convertToNewOp(story));
+    }
+    // if, not, deictic
+    default:
+      debugger;
+  }
+}
+
+// todo: (pick n), random
+let Actor = {
+  all: "all now",
+  any: "any",
+  seq: "<",
+  eq: "eq",
+};
+
 let episode = {
   // branch according to actor
   branch: (actor, cases) => ({
@@ -90,9 +136,9 @@ function objFilterMap(o, f) {
     af(Object.entries(o))
       .map(([k, v]) => {
         let x = f(v, k);
-        return x ? [k, x] : null;
+        return x !== undefined ? [k, x] : undefined;
       })
-      .filter((x) => x)
+      .filter((x) => x !== undefined)
   );
 }
 function kv(o) {
@@ -103,7 +149,7 @@ function v(o) {
 }
 
 function getActor(tag) {
-  return Actor.seq; // todo allow custom
+  return { tag: Actor.seq }; // todo allow custom
 }
 
 function newVars(parent) {
@@ -127,30 +173,27 @@ function newEpisode(tag, during, parent = null) {
   return node;
 }
 
-// other methods on episodes
-// here
 function processInput(ec, parent, episode, input) {
   switch (episode.tag) {
     case "node":
       return { ...episode, body: processInput(ec, episode, episode.body, input) };
     case "ep/done":
+      assert(input === null);
       return episode;
     case "tip":
       let { value } = episode;
-      //if (input !== null) debugger;
       if (canonicalOperation(value.operation)) {
-        ////todo
-        //assert(input.length === 0);
-        //debugger;
+        assert(input === null);
         return stepTip(ec, parent, value, null);
       }
-      //assert(input.length === 1);
+      assert(input.length !== null);
       //let [choice] = input;
       return stepTip(ec, parent, value, input);
     case "branch": {
       let { actor, cases } = episode;
       let def = () => {
-        assert(kv(cases).some(([k, _v]) => input[k]));
+        assert(kv(cases).some(([k, _v]) => input[k] !== undefined));
+        // assert all input included in cases
         let x = {
           ...episode,
           cases: objMap(cases, (child, key) =>
@@ -159,7 +202,7 @@ function processInput(ec, parent, episode, input) {
         };
         return x;
       };
-      switch (actor) {
+      switch (actor.tag) {
         case Actor.any:
           let x = kv(cases).filter(([_k, x]) => !episodeDone(x));
           if (x.length === 1) {
@@ -187,6 +230,21 @@ function processInput(ec, parent, episode, input) {
             ...episode,
             cases: objMap(cases, (v) => processInput(ec, parent, v, input)),
           };
+        case Actor.eq: {
+          // assume always explicit choice
+          let newCases = objFilterMap(cases, (child, key) =>
+            input[key] !== undefined
+              ? processInput(ec, parent, child, input[key])
+              : undefined
+          );
+          assert(v(newCases).length === actor.count);
+          let x = {
+            ...episode,
+            actor: { tag: Actor.all },
+            cases: newCases,
+          };
+          return x;
+        }
         default:
           debugger;
       }
@@ -208,7 +266,7 @@ function canonicalEpisode(episode) {
       return canonicalOperation(operation);
     case "branch":
       let { actor, cases } = episode;
-      switch (actor) {
+      switch (actor.tag) {
         case Actor.any:
           let cs = v(cases).filter((x) => !episodeDone(x));
           return cs.length === 1 && canonicalEpisode(cs[0]);
@@ -220,6 +278,8 @@ function canonicalEpisode(episode) {
           return true;
         case Actor.all:
           return children(episode).every(canonicalEpisode);
+        case Actor.eq:
+          return false;
         default:
           debugger;
       }
@@ -234,61 +294,25 @@ function children(episode) {
 }
 
 episode.seq = (a, b) => {
-  return episode.branch(Actor.seq, {
-    1: a,
-    2: b,
-  });
+  return episode.branch(
+    { tag: Actor.seq },
+    {
+      1: a,
+      2: b,
+    }
+  );
 };
 
 operation.seq = (a, b) => {
-  return operation.cases(Actor.seq, {
-    1: a,
-    2: b,
-  });
+  return operation.cases(
+    { tag: Actor.seq },
+    {
+      1: a,
+      2: b,
+    }
+  );
 };
 
-function convertToNewOp(operations) {
-  if (operations.length === 0) return operation.done();
-  let [op, ...rest] = operations;
-  let k = convertToNewOp(rest);
-  function br(v) {
-    return operation.seq(v, k);
-  }
-  switch (op.tag) {
-    case "assert": {
-      let { tuple } = op;
-      return operation.assert(tuple, k);
-    }
-    case "do": {
-      let {
-        value: { name, tuples },
-      } = op;
-      return operation.do(name, tuples, k);
-    }
-    case "observation": {
-      let { pattern } = op;
-      return operation.observation(pattern, k);
-    }
-    case "choose": {
-      let { quantifier, value } = op;
-      return operation.choose(quantifier, value, k);
-    }
-    case "branch": {
-      let { quantifier, value } = op;
-      return operation.cases(
-        quantifier,
-        value.map(({ id, body }) => [id, body])
-      );
-    }
-    case "subStory": {
-      let { story } = op;
-      return br(convertToNewOp(story));
-    }
-    // if, not, deictic
-    default:
-      debugger;
-  }
-}
 function canonicalOperation(op) {
   switch (op.tag) {
     case "op/done": // needs to convert into episode.done
@@ -315,7 +339,7 @@ function filterDone(episode) {
       return {
         ...episode,
         cases: objFilterMap(episode.cases, (v) =>
-          episodeDone(v) ? null : filterDone(v)
+          episodeDone(v) ? undefined : filterDone(v)
         ),
       };
     case "node":
@@ -382,7 +406,7 @@ function stepTip({ ec, rules }, parentNode, { binding, operation }, choice) {
         return done();
       } else {
         let tips = bindings.map((b) => tp(b, k));
-        return episode.branch(Actor.all, tips);
+        return episode.branch({ tag: Actor.all }, tips);
       }
     }
     case "cases": {
@@ -412,7 +436,7 @@ function stepTip({ ec, rules }, parentNode, { binding, operation }, choice) {
           assert(bindings.length >= actor.count, "invalid choice");
           if (bindings.length === actor.count) {
             return episode.branch(
-              Actor.all,
+              { tag: Actor.all },
               bindings.map((b) => tp(b, k))
             );
           }

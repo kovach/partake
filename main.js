@@ -130,18 +130,19 @@ let mkjs = () => {
 };
 
 //let chk = (e) => console.log(ppe(e));
-let chk = (e) => console.log(JSON.stringify(json(e), null, 2));
+let chk = (e, str = "") => console.log(str, JSON.stringify(json(e), null, 2));
 
-function drive(prog, e) {
+function drive(prog, e, print = true) {
   let gas = 100;
   let steps = 0;
+  if (print) chk(e, "start: ");
   while (steps++ < gas && canonicalEpisode(e) && !episodeDone(e)) {
     e = processInput(prog, null, filterDone(e), null);
     prog.ec.solve();
-    chk(e);
+    if (print) chk(e);
   }
   e = filterDone(e);
-  console.log("steps: ", steps);
+  console.log("steps: ", steps - 1);
   if (steps >= gas) throw "ran out of gas";
   return e;
 }
@@ -172,15 +173,17 @@ window.onload = () =>
     function go(e, i) {
       return processInput(prog, null, drive(prog, e), i);
     }
-
     timeFn(() => {
       e = go(e, tob("{L: 1}"));
       e = go(e, tob("{L': 3}"));
+      e = drive(prog, e, false);
       e = go(e, tob("{L1: 1}"));
       e = go(e, tob("{L2: 3}"));
-      e = drive(prog, e);
-      //e = go(e, { token: null });
-      chk(e);
+      e = go(e, { foo1: null, foo2: null });
+
+      // always
+      e = drive(prog, e, true);
+      prog.ec.solve();
     });
 
     print();

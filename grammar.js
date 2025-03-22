@@ -131,7 +131,7 @@ let ParserRules = [
     {"name": "episode_expr$ebnf$1", "symbols": []},
     {"name": "episode_expr$ebnf$1$subexpression$1", "symbols": ["_", "op", "branch_option", "cp"]},
     {"name": "episode_expr$ebnf$1", "symbols": ["episode_expr$ebnf$1", "episode_expr$ebnf$1$subexpression$1"], "postprocess": function arrpush(d) {return d[0].concat([d[1]]);}},
-    {"name": "episode_expr", "symbols": ["episode_expr$string$3", "_", {"literal":"("}, "episode_expr$ebnf$1", "cp"], "postprocess": (d) => [{ tag: "branch", quantifier: null, value: d[3].map((d) => d[2]) }]},
+    {"name": "episode_expr", "symbols": ["episode_expr$string$3", "_", {"literal":"("}, "episode_expr$ebnf$1", "cp"], "postprocess": (d) => [{ tag: "branch", quantifier: {tag: 'eq', count: 1}, value: d[3].map((d) => d[2]) }]},
     {"name": "episode_expr$string$4", "symbols": [{"literal":"b"}, {"literal":"r"}, {"literal":"a"}, {"literal":"n"}, {"literal":"c"}, {"literal":"h"}], "postprocess": function joiner(d) {return d.join('');}},
     {"name": "episode_expr$ebnf$2", "symbols": []},
     {"name": "episode_expr$ebnf$2$subexpression$1", "symbols": ["_", "op", "branch_option", "cp"]},

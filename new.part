@@ -9,12 +9,21 @@ game:
     +located Z -> X,
     ),
   ~turn,
+  +asdf3,
   .
 
 {token} turn:
+  +asdf1,
   choose 1 (token X, located X -> L1),
   choose 1 (location L2),
   +located X -> L2,
+  # choose 2 of three
+  branch 2 (
+    ( foo1: +bar1 )
+    ( foo2: +bar2 )
+    ( foo3: +bar3 )
+  ),
+  +asdf2,
   .
 
 {enemy} turn:
