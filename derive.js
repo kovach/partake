@@ -257,6 +257,7 @@ function fixQuery(q) {
   q = q.map(({ tag, terms }) => [tag].concat(terms));
   return q;
 }
+
 function fixRules(rules) {
   return rules.map(({ head, body, type }) => ({
     body: fixQuery(body),

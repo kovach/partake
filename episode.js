@@ -1,4 +1,4 @@
-import { assert, enumerate, KeyedMap } from "./collections.js";
+import { assert, KeyedMap } from "./collections.js";
 import { addAtom, core, substitute, weight } from "./derive.js";
 import { af, Binding, freshId, uniqueInt } from "./join.js";
 let Actor = {
@@ -23,9 +23,9 @@ let episode = {
 let operation = {
   done: () => ({ tag: "op/done" }),
   /* ? */ observation: (pattern, k) => ({ tag: "observation", pattern, k }),
-  /* + */ assert: (tuple) => ({ tag: "assert", tuple }),
+  /* + */ assert: (tuple, k) => ({ tag: "assert", tuple, k }),
+  /* ~ */ do: (name, pairs, k) => ({ tag: "do", name, pairs, k }),
   /* branch */ cases: (actor, cases) => ({ tag: "cases", actor, cases }),
-  /* ~ */ do: (name, pairs) => ({ tag: "do", name, pairs }),
   /* choose */ choose: (actor, value, k) => ({ actor, value, k }),
   /* ~x := y */ deixis: (id, term) => ({ id, term }),
 
@@ -60,28 +60,7 @@ function getActor(tag) {
   return Actor.any; // todo allow custom
 }
 
-class IndexicalState {
-  map = new KeyedMap((x) => JSON.stringify(x));
-  node(tag, child, parent = null) {
-    let binding = new Binding();
-    binding.set(tag, child);
-    this.map.set(child, { binding, parent });
-  }
-  set(tag, value, node) {
-    this.map.get(node).binding.set(tag, value);
-  }
-  get(tag, node) {
-    let chase = ({ binding, parent }) => {
-      console.log("chas: ", tag, binding, parent);
-      if (binding.has(tag)) return binding.get(tag);
-      if (parent) return chase(this.map.get(parent));
-    };
-    console.log("..", node);
-    return chase(this.map.get(node));
-  }
-}
-
-function newVars(tag, parent) {
+function newVars(parent) {
   let binding = new Binding();
   return { binding, parent };
 }
@@ -97,11 +76,7 @@ function newEpisode(tag, during, parent = null) {
     if (cases[id]) id = id + uniqueInt(); // TODO
     cases[id] = episode.tip(tip.mk(new Binding(), body));
   }
-  let node = episode.node(
-    tag,
-    episode.branch(getActor(tag), cases),
-    newVars(tag, parent)
-  );
+  let node = episode.node(tag, episode.branch(getActor(tag), cases), newVars(parent));
   setIndexical(tag, node.id, node);
   return node;
 }
@@ -207,42 +182,38 @@ function children(episode) {
   assert(episode.tag === "branch");
   return v(episode.cases);
 }
-//for (let [k, v] of Object.entries(episode)) {
-//  episode[k] = (...args) => {
-//    let episode = v(...args);
-//    //episode.children = function () {
-//    //  return children(this);
-//    //};
-//    //episode.canonical = function () {
-//    //  return canonicalEpisode(this);
-//    //};
-//    //episode.process = function (ec, parent, input) {
-//    //  return processInput(ec, parent, this, input);
-//    //};
-//    return episode;
-//  };
-//}
+
+episode.seq = (a, b) => {
+  return episode.branch(Actor.seq, {
+    1: a,
+    2: b,
+  });
+};
+
+operation.seq = (a, b) => {
+  return operation.cases(Actor.seq, {
+    1: a,
+    2: b,
+  });
+};
 
 function convertToNewOp(operations) {
   if (operations.length === 0) return operation.done();
   let [op, ...rest] = operations;
   let k = convertToNewOp(rest);
   function br(v) {
-    return operation.cases(Actor.seq, {
-      1: v,
-      2: k,
-    });
+    return operation.seq(v, k);
   }
   switch (op.tag) {
     case "assert": {
       let { tuple } = op;
-      return br(operation.assert(tuple));
+      return operation.assert(tuple, k);
     }
     case "do": {
       let {
         value: { name, tuples },
       } = op;
-      return br(operation.do(name, tuples));
+      return operation.do(name, tuples, k);
     }
     case "observation": {
       let { pattern } = op;
@@ -317,13 +288,10 @@ function episodeDone(episode) {
   }
 }
 
-/* removed args
-id: folded into episode
-label: not needed because labels are now local
-*/
-/*
-parent = id of enclosing node
-*/
+function tp(b, x) {
+  return episode.tip(tip.mk(b, x));
+}
+
 function stepTip({ ec, rules }, parentNode, { binding, operation }, choice) {
   let state = ec.getState();
   let defs = ec.defs;
@@ -332,19 +300,22 @@ function stepTip({ ec, rules }, parentNode, { binding, operation }, choice) {
   switch (operation.tag) {
     case "op/done":
       return done();
+    case "do":
+      let { name, pairs, k } = operation;
+      // todo: substitute pairs
+      let it = newEpisode(name, rules.during, parentNode);
+      return episode.seq(it, tp(binding, k));
     case "assert": {
       let {
         tuple: { tag, terms },
+        k,
       } = operation;
       let pattern = [tag, ...terms];
       binding = binding.clone();
       let atom = substitute(defs.js, location, binding, pattern, true);
       addAtom(state, core(atom), weight(atom));
-      return done();
+      return tp(binding, k);
     }
-    case "do":
-      let { name, pairs } = operation;
-      return newEpisode(name, rules.during, parentNode);
     case "observation": {
       let {
         k,
@@ -356,7 +327,6 @@ function stepTip({ ec, rules }, parentNode, { binding, operation }, choice) {
         return done();
       } else {
         let tips = bindings.map((binding) => episode.tip(tip.mk(binding, k)));
-        // here todo
         return episode.branch(Actor.all, tips);
       }
     }
