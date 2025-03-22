@@ -14,6 +14,8 @@ game:
 
 {token} turn:
   +asdf1,
+  ~me := 222,
+  +foo ~me,
   ~turn1,
   choose 1 (token X, located X -> L1),
   choose 1 (location L2),
@@ -32,8 +34,8 @@ game:
   +asdf2,
   .
 
-turn1: +bar.
-turn1: +baz.
+turn1: +bar ~turn ~me.
+turn1: +baz ~turn ~me.
 
 {enemy} turn:
   choose 1 (enemy X, located X -> L),

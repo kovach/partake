@@ -1,6 +1,6 @@
 import { assert, KeyedMap } from "./collections.js";
 import { addAtom, core, fixQuery, substitute, weight } from "./derive.js";
-import { af, Binding, freshId, uniqueInt } from "./join.js";
+import { af, Binding, evalTermStrict, freshId, uniqueInt } from "./join.js";
 import { parseNonterminal } from "./parse.js";
 
 // todo: (pick n), random
@@ -41,7 +41,7 @@ let operation = {
   /* ~ */ do: (name, pairs, k) => ({ tag: "do", name, pairs, k }),
   /* branch */ cases: (actor, cases) => ({ tag: "cases", actor, cases }),
   /* choose */ choose: (actor, value, k) => ({ tag: "choose", actor, value, k }),
-  /* ~x := y */ deixis: (id, term) => ({ id, term }),
+  /* ~x := y */ indexical: (id, term) => ({ tag: "indexical", id, term }),
 
   // todo
   /* helpers... if, not, may */
@@ -254,7 +254,7 @@ function canonicalOperation(op) {
     case "observation":
     case "assert":
     case "do":
-    case "deixis":
+    case "indexical":
       return true;
     case "choose":
       return false; // todo
@@ -330,7 +330,7 @@ function stepTip({ ec, rules }, parentNode, { binding, operation }, choice) {
       } = operation;
       let pattern = [tag, ...terms];
       binding = binding.clone();
-      let atom = substitute(defs.js, location, binding, pattern, true);
+      let atom = substitute(defs.js, parentNode, binding, pattern, true);
       addAtom(state, core(atom), weight(atom));
       return tp(binding, k);
     }
@@ -385,6 +385,12 @@ function stepTip({ ec, rules }, parentNode, { binding, operation }, choice) {
           return bindings.map(mkRest);
       }
       return tp(binding, { ...operation, value: { options: bindings } });
+    }
+    case "indexical": {
+      let { id, term } = operation;
+      let x = evalTermStrict(defs.js, parentNode, binding, term);
+      setIndexical(id, x, parentNode);
+      return done();
     }
     default:
       debugger;
@@ -477,7 +483,10 @@ function convertToNewOp(operations) {
       let { story } = op;
       return br(convertToNewOp(story));
     }
-    // if, not, deictic
+    case "deictic":
+      let { id, value } = op;
+      return br(operation.indexical(id, value));
+    // if, not
     default:
       debugger;
   }
