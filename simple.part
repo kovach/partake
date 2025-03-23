@@ -1,0 +1,7 @@
+move: +located ~it -> ~to.
+
+game:
+  ~move [ ~it := 'a, ~to := 'X ],
+  ~move [ ~it := 'b, ~to := 'a ],
+  ~move [ ~it := 'a, ~to := 'b ],
+  .

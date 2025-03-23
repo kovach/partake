@@ -1,0 +1,10 @@
+
+---
+card 'a, card 'b, card 'c,
+located 'a -> 'b,
+located 'b -> 'c,
+.
+
+located X -> Y --- covered Y.
+
+card X, covered X -> 0 --- top X.

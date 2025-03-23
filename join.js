@@ -500,7 +500,6 @@ export {
   pp,
   cloneDb,
   dbEq,
-  extendBinding,
   ppTuples,
   Binding,
 };

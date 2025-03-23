@@ -36,16 +36,17 @@ shuffle-stack:
 ### Setup
 game: ~setup, ~start-game.
 
-# (unstated) Each player has a deck, a discard pile, a play area.
+# (unstated) Each player has a deck, a hand, a discard pile, a play area.
 setup: ~setup-players, ~setup-decks.
 setup-players:
   +player 'me,
   +player 'you,
   ( player P,
     +deck P Deck,
+      +stack Deck, +stack Disc,
+    +hand P Hand,
     +discard-pile P Disc,
     +play-area P _,
-    +stack Deck, +stack Disc,
   ).
 
 #    Each player takes 3 Estates and 7 Coppers and
@@ -62,5 +63,34 @@ setup-deck:
 
 deal-estate: +estate C, +located C -> ~player.deck.
 deal-copper: +copper C, +located C -> ~player.deck.
+
+#    Randomly choose a starting player.
+#    Each player draws an initial hand of 5 cards.
+start-game:
+  choose [random 1] (player Starter),
+  +starting-player Starter,
+  ( player P, ~draw-hand [ ~player := P ] ),
+  ~turn [ ~player := Starter ].
+
+#    Draw a new hand of 5 cards.
+#    If your deck has fewer than 5 cards,
+#      first shuffle your discard pile and put it under your deck,
+#    then draw.
+draw-hand:
+  ( if (cards-in-deck ~player -> N, @lt N 5),
+      ~shuffle-stack [ ~stack := ~player.discard ],
+      ~stack-below [ ~above := ~player.deck,
+                     ~below := ~player.discard ] ),
+
+  ~draw-number [ ~number := 5 ].
+
+draw-number:
+  @lt 0 ~number, ~draw-card,
+  ~draw-number [ ~number := @sub(~number, 1) ].
+
+# To draw: move the top card of your deck to your hand (if it exists).
+draw-card:
+  stack/top ~player.deck C,
+  +located C -> ~player.hand.
 
 exit.

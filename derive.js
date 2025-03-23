@@ -80,16 +80,50 @@ function reductionOps(relationTypes, tag) {
     return ({ value: a }, { value: b }) => type(fn(a, b));
   }
   let semirings = {
-    bool: { type: mkInt, add: wrap(mkInt, (a, b) => a || b), zero: mkInt(0) },
-    min: { type: mkInt, add: wrap(mkInt, Math.min), zero: mkInt(Infinity) },
-    max: { type: mkInt, add: wrap(mkInt, Math.max), zero: mkInt(-Infinity) },
-    num: { type: mkInt, add: wrap(mkInt, (a, b) => a + b), zero: mkInt(0) },
-    last: { type: mkBox, add: (_a, b) => b, zero: mkBox(null) },
+    bool: {
+      tag: "bool",
+      type: mkInt,
+      add: wrap(mkInt, (a, b) => a || b),
+      zero: mkInt(0),
+    },
+    min: { tag: "min", type: mkInt, add: wrap(mkInt, Math.min), zero: mkInt(Infinity) },
+    max: { tag: "max", type: mkInt, add: wrap(mkInt, Math.max), zero: mkInt(-Infinity) },
+    num: { tag: "num", type: mkInt, add: wrap(mkInt, (a, b) => a + b), zero: mkInt(0) },
+    last: { tag: "last", type: mkBox, add: (_a, b) => b, zero: mkBox(null) },
   };
   let ty = reductionType(relationTypes, tag);
   assert(ty);
   assert(ty in semirings);
   return semirings[ty];
+}
+
+function tupleValid(tuple, tag, values) {
+  function tval(i) {
+    return tuple[i + 1];
+  }
+
+  assert(Array.isArray(values));
+  if (tuple[0] !== tag) {
+    return false;
+  }
+  if (values.length !== tuple.length - 1) return false;
+  // all tuple components match the pattern where it is already bound (a literal)
+  return values.every((term, index) => {
+    return !(isLiteral(term) && !valEqual(term, tval(index)));
+  });
+}
+
+function extendBinding(binding, tuple, values) {
+  function tval(i) {
+    return tuple[i + 1];
+  }
+
+  binding = binding.clone();
+  values.forEach((term, index) => {
+    if (isVar(term)) binding.set(term.value, tval(index));
+  });
+  binding.notes.add("used", tuple);
+  return binding;
 }
 
 function evalQuery(
@@ -177,35 +211,6 @@ function evalQuery(
         }
       }
     }
-  }
-
-  function tupleValid(tuple, tag, values) {
-    function tval(i) {
-      return tuple[i + 1];
-    }
-
-    assert(Array.isArray(values));
-    if (tuple[0] !== tag) {
-      return false;
-    }
-    if (values.length !== tuple.length - 1) return false;
-    // all tuple components match the pattern where it is already bound (a literal)
-    return values.every((term, index) => {
-      return !(isLiteral(term) && !valEqual(term, tval(index)));
-    });
-  }
-
-  function extendBinding(binding, tuple, values) {
-    function tval(i) {
-      return tuple[i + 1];
-    }
-
-    binding = binding.clone();
-    values.forEach((term, index) => {
-      if (isVar(term)) binding.set(term.value, tval(index));
-    });
-    binding.notes.add("used", tuple);
-    return binding;
   }
 }
 
@@ -380,6 +385,7 @@ function mkSeminaive(r, js, relationTypes) {
               if (valEqual(weight(terms), _true)) {
                 return [tag].concat(core(terms).map(ppTerm)).join(" ");
               } else {
+                return "";
                 return [tag, ...core(terms).map(ppTerm), "->", "false"].join(" ");
               }
             } else {
@@ -420,11 +426,21 @@ function mkSeminaive(r, js, relationTypes) {
     for (let rule of theRules) {
       for (let { spot, rest } of splitRule(rule.body, tag(tuple))) {
         // bind new tuple
-        let context = evalQuery(
-          { db: new DB([tuple]), js, relationTypes },
-          [spot],
-          [emptyBinding()]
-        );
+        // big hack
+        let context;
+        if (weight(tuple).value === 0 && weight(spot).value === 0) {
+          if (tupleValid(tuple, tag(tuple), terms(spot))) {
+            context = [extendBinding(emptyBinding(), tuple, terms(spot))];
+          } else {
+            context = [];
+          }
+        } else {
+          context = evalQuery(
+            { db: new DB([tuple]), js, relationTypes },
+            [spot],
+            [emptyBinding()]
+          );
+        }
         // solve remaining query
         for (let binding of evalQuery(
           { db: dbAggregates, js, relationTypes },
@@ -533,6 +549,13 @@ function mkSeminaive(r, js, relationTypes) {
     dependencies.reset(tuple);
     state.addWorklist = state.addWorklist.filter((t) => !tupleEqual(t, tuple));
     dbAggregates.remove(core(tuple));
+    {
+      let { tag: t, zero } = reductionOps(relationTypes, tag(tuple));
+      if (t === "bool" && weight(tuple).value === 1) {
+        //debugger;
+        queueTupleAdd([...core(tuple), zero]);
+      }
+    }
   }
   function retractBinding(x) {
     changeBinding(x, "del");

@@ -51,8 +51,9 @@ function loadSeveral(files, fn) {
 let _true = mkInt(1);
 let labelSep = "/";
 
-let relTypes = {
+let _relTypes = {
   located: "last",
+
   owner: "last",
 
   delay: "max",
@@ -163,7 +164,7 @@ function runScript(scr, prog, e) {
   prog.ec.solve();
   return e;
 }
-function load(x, s, omit) {
+function load(x, relTypes, s, omit) {
   loadSeveral([x + ".said", x + ".part"], ([sad, part]) => {
     let { text, rules } = parseProgram(part);
     let inferences = parseRules(sad);
@@ -263,9 +264,14 @@ function t2() {
 }
 
 function testDom() {
+  let relTypes = {
+    located: "last",
+  };
+
   resetSeed();
   return load(
     "dom1",
+    relTypes,
     [
       `?`,
       //i`{Starter: 'me}`,
@@ -273,6 +279,15 @@ function testDom() {
     ],
     ["copper", "estate", "above", "covered"]
   );
+}
+
+function test() {
+  let relTypes = {
+    located: "last",
+  };
+
+  resetSeed();
+  return load("simple", relTypes, [`?`], []);
 }
 
 window.onload = testDom;

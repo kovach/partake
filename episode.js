@@ -556,7 +556,7 @@ function convertToNewOp(operations) {
   }
 }
 
-function drive(prog, e, print = false, gas = 200) {
+function drive(prog, e, print = false, gas = 300) {
   let chk = (e, str = "") => console.log(str, JSON.stringify(json(e), null, 2));
   let steps = 0;
   if (print) chk(e, "start: ");
