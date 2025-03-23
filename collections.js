@@ -127,6 +127,21 @@ class MonoidMap {
   update(key, fn) {
     this.map.set(key, fn(this.get(key)));
   }
+  *entries() {
+    yield* this.map.entries();
+  }
+}
+
+class CounterMap extends MonoidMap {
+  constructor(values) {
+    super(
+      () => ({ count: 0 }),
+      (x, b) => {
+        x.count += b;
+      },
+      values
+    );
+  }
 }
 
 class ArrayMap extends MonoidMap {
@@ -170,6 +185,7 @@ export {
   splitArray,
   MonoidMap,
   ArrayMap,
+  CounterMap,
   KeyedMap,
   DelayedMap,
   range,

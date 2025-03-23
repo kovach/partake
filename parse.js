@@ -227,7 +227,7 @@ function parseProgram(text) {
     assert(type);
     program[type].add(predicate, { id, body });
   }
-  return program;
+  return { text, rules: program };
 
   function appendDone(body) {
     if (body.length === 0) return [{ tag: "done" }];
@@ -243,6 +243,7 @@ function parseProgram(text) {
     let removeCommentFromLine = (s) => /[^#]*/.exec(s)[0];
     lines = lines.map(removeCommentFromLine);
     lines = takeWhile(lines, (line) => line !== "exit.");
+    lines = lines.filter((l) => l.length > 0);
     return lines;
   }
 }

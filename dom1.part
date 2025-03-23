@@ -1,0 +1,66 @@
+# Dominion
+
+### Fundamentals
+
+### Move
+# (unstated) to move a card, change `it`'s location to `to`
+move: +located ~it -> ~to.
+
+### Stacking
+# Place bottom of stack ~above onto top of stack ~below
+stack-onto:
+  ~move [ ~it := ~above.stack/bottom, ~to := ~below.stack/top ].
+
+# Slide stack ~below underneath stack ~above.
+stack-below:
+  ~stack-onto,
+  ~move [ ~it := ~below.stack/bottom, ~to := ~above ].
+
+shuffle-stack-onto:
+  # Choose one card from the source (halt if none remain).
+  choose [random 1] (above X ~pile),
+  # If more cards are on top of it, move them back to the pile.
+  ( located C -> X, +located C -> ~pile ),
+  # Move the chosen card to the temporary spot
+  ~move [ ~it := X, ~to := ~onto ],
+  # Continue shuffling with the newly chosen card as the
+  # location for the next one.
+  ~shuffle-stack-onto [ ~onto := X ].
+
+shuffle-stack:
+  +stack L, # temporary stack
+  ~shuffle-stack-onto [ ~onto := L ],
+  ~move [ ~it := L.stack/bottom, ~to := ~pile ],
+  .
+
+### Setup
+game: ~setup, ~start-game.
+
+# (unstated) Each player has a deck, a discard pile, a play area.
+setup: ~setup-players, ~setup-decks.
+setup-players:
+  +player 'me,
+  +player 'you,
+  ( player P,
+    +deck P Deck,
+    +discard-pile P Disc,
+    +play-area P _,
+    +stack Deck, +stack Disc,
+  ).
+
+#    Each player takes 3 Estates and 7 Coppers and
+#    shuffles them face down as a starting deck.
+setup-decks: player P,
+  ~setup-deck [ ~player := P ],
+  ~shuffle-stack [~pile := P.deck ].
+
+setup-deck:
+  ~deal-estate, ~deal-estate, ~deal-estate,
+  ~deal-copper, ~deal-copper, ~deal-copper, ~deal-copper,
+  ~deal-copper, ~deal-copper, ~deal-copper,
+  .
+
+deal-estate: +estate C, +located C -> ~player.deck.
+deal-copper: +copper C, +located C -> ~player.deck.
+
+exit.

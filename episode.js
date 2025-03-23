@@ -1,7 +1,8 @@
 import { assert, KeyedMap } from "./collections.js";
 import { addAtom, core, fixQuery, substitute, weight } from "./derive.js";
-import { af, Binding, evalTermStrict, freshId, uniqueInt } from "./join.js";
+import { af, Binding, evalTermStrict, freshId, ppTerm, uniqueInt } from "./join.js";
 import { parseNonterminal } from "./parse.js";
+import { jsf, randomSample, resetSeed } from "./random.js";
 
 // todo: (pick n), random
 let Actor = {
@@ -9,6 +10,8 @@ let Actor = {
   any: "any",
   seq: "<",
   eq: "eq",
+  upto: "upto",
+  random: "random",
 };
 
 let episode = {
@@ -45,6 +48,7 @@ let operation = {
 
   // todo
   /* helpers... if, not, may */
+  subQuery: (query, cmp, k) => ({ tag: "subQuery", query, cmp, k }),
 
   seq: (a, b) => {
     if (b.tag === "op/done") return a;
@@ -103,24 +107,28 @@ function newRootEpisode(defs, during) {
 
 function newEpisode(defs, binding, tag, during, is, parent = null) {
   let bodies = during.get(tag).reverse();
+  if (bodies.length === 0) console.log("MISSING: ", tag);
   let cases = {};
   for (let { id, body } of bodies) {
     if (cases[id]) id = id + uniqueInt(); // TODO
     cases[id] = episode.tip(tip.mk(new Binding(), body));
   }
   let node = episode.node(tag, episode.branch(getActor(tag), cases), newVars(parent));
+  let debugStr = "new: " + tag;
   setIndexical(tag, node.id, node);
   for (let { id, term } of is) {
     let x = evalTermStrict(defs.js, node, binding, term);
     setIndexical(id, x, node);
+    debugStr += ` (${id}: ${ppTerm(x)})`;
   }
+  console.log(debugStr);
   return node;
 }
 
-function processInput(ec, parent, episode, input) {
+function processInput(ec, episode, input, parent = null) {
   switch (episode.tag) {
     case "node":
-      return { ...episode, body: processInput(ec, episode, episode.body, input) };
+      return { ...episode, body: processInput(ec, episode.body, input, episode) };
     case "ep/done":
       assert(input === Input.none);
       return episode;
@@ -136,7 +144,7 @@ function processInput(ec, parent, episode, input) {
           ...episode,
           cases: objFilterMap(cases, (child, key) =>
             input[key] !== undefined
-              ? processInput(ec, parent, child, input[key])
+              ? processInput(ec, child, input[key], parent)
               : filter
               ? undefined
               : { ...child }
@@ -150,6 +158,7 @@ function processInput(ec, parent, episode, input) {
           return def(false);
         case Actor.all:
           return def(false); // ignored
+        case Actor.random:
         case Actor.eq: {
           return {
             ...def(true),
@@ -263,8 +272,10 @@ function canonicalOperation(op) {
     case "assert":
     case "do":
     case "indexical":
+    case "subQuery":
       return true;
     case "choose":
+      if (op.actor.tag === Actor.random) return true;
       return false; // todo
     default:
       debugger;
@@ -375,22 +386,39 @@ function stepTip({ ec, rules }, parentNode, { binding, operation }, choice) {
         bindings = value.options;
       }
       let initialLength = bindings.length;
-      bindings = bindings.filter((b) => choice.le(b));
+      if (choice !== Input.poke) bindings = bindings.filter((b) => choice.le(b));
       //assert(bindings.length < initialLength, "irrelevant choice");
       switch (actor.tag) {
-        case "eq":
-          assert(bindings.length >= actor.count, "invalid choice");
-          if (bindings.length === actor.count) {
+        case "eq": {
+          let { value } = evalTermStrict(defs.js, parentNode, binding, actor.count);
+          // todo
+          assert(bindings.length >= value, "invalid choice");
+          if (bindings.length === value) {
             return episode.branch(
               { tag: Actor.all },
               bindings.map((b) => tp(b, k))
             );
           }
           break;
-        case "random":
-          debugger;
-          bindings = randomSample(bindings, quantifier.count);
-          return bindings.map(mkRest);
+        }
+        case "random": {
+          let { value } = evalTermStrict(defs.js, parentNode, binding, actor.count);
+          if (bindings.length === 0) return done();
+          //assert(bindings.length >= value, "invalid choice");
+          bindings = randomSample(bindings, value);
+          if (bindings.length === value) {
+            return episode.branch(
+              { tag: Actor.all },
+              bindings.map((b) => tp(b, k))
+            );
+          }
+          break;
+        }
+        // todo
+        //case "random":
+        //debugger;
+        //bindings = randomSample(bindings, quantifier.count);
+        //return bindings.map(mkRest);
       }
       return tp(binding, { ...operation, value: { options: bindings } });
     }
@@ -399,6 +427,25 @@ function stepTip({ ec, rules }, parentNode, { binding, operation }, choice) {
       let x = evalTermStrict(defs.js, parentNode, binding, term);
       setIndexical(id, x, parentNode);
       return done();
+    }
+    case "subQuery": {
+      let { query, cmp } = operation;
+
+      query = fixQuery(query);
+      let n = ec.query(parentNode, query, binding).length;
+      let ok;
+      switch (cmp) {
+        case "zero":
+          ok = n === 0;
+          break;
+        case "nonzero":
+          ok = n !== 0;
+          break;
+        default:
+          throw "";
+      }
+      if (ok) return tp(b, k);
+      else return done();
     }
     default:
       debugger;
@@ -491,13 +538,45 @@ function convertToNewOp(operations) {
       let { story } = op;
       return br(convertToNewOp(story));
     }
-    case "deictic":
+    case "deictic": {
       let { id, value } = op;
       return br(operation.indexical(id, value));
+    }
+    case "countIf": {
+      let { value } = op;
+      return operation.subQuery(value, "nonzero", k);
+    }
+    case "countNot": {
+      let { value } = op;
+      return operation.subQuery(value, "zero", k);
+    }
     // if, not
     default:
       debugger;
   }
+}
+
+function drive(prog, e, print = false, gas = 200) {
+  let chk = (e, str = "") => console.log(str, JSON.stringify(json(e), null, 2));
+  let steps = 0;
+  if (print) chk(e, "start: ");
+  while (steps++ < gas && !episodeDone(e)) {
+    e = filterDone(e);
+    let u = canonUpdate(e);
+    if (!u) break;
+    e = processInput(prog, e, u);
+    prog.ec.solve();
+    if (print) chk(e);
+  }
+  e = filterDone(e);
+  console.log("steps: ", steps - 1);
+  if (steps >= gas) throw "ran out of gas";
+  return e;
+}
+
+function offer(prog, e, i) {
+  e = drive(prog, e);
+  return processInput(prog, e, intoUpdate(i, e));
 }
 
 export {
@@ -515,4 +594,6 @@ export {
   Input,
   canonUpdate,
   intoUpdate,
+  offer,
+  drive,
 };

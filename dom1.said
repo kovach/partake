@@ -1,0 +1,20 @@
+# (unstated) Your hand size is the number of cards
+located C -> .hand --- cards-in-hand -> 1.
+
+located X -> S, stack S --- above X S.
+located X -> Y, above Y S --- above X S.
+
+located X -> Y --- covered Y.
+
+stack S, above X S, covered X -> 0
+--- stack/top S X.
+
+stack S, located X -> S
+--- stack/bottom S X.
+
+deck _ D --- stack D.
+
+# FIXME
+
+#    The full set of cards available this game is called the Supply.
+located C -> .pile --- in-supply C.

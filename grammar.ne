@@ -6,6 +6,8 @@ __ -> [\s] | __ [\s] {% function() {} %}
 comma -> _ "," _ {% () => null %}
 op -> "(" _ {% () => null %}
 cp -> _ ")" {% () => null %}
+ob -> "[" _ {% () => null %}
+cb -> _ "]" {% () => null %}
 
 number -> [0-9]:+ {% d => parseInt(d[0].join("")) %}
 
@@ -42,15 +44,25 @@ binding_list -> binding (comma binding_list):? {% (d) => [d[0], ...(d[1] ? d[1][
 binding_expr -> "{" _ binding_list _ "}" {% (d) => ({tag: 'preBind', value: d[2]}) %}
 indexical_expr -> "~" identifier {% (d) => ({tag: 'indexical', value: d[1]}) %}
 
+quantifier -> "any" {% (d) => ({tag: 'any'}) %}
+quantifier -> "all" {% (d) => ({tag: 'all'}) %}
+quantifier -> ob "random" _ term cb {% (d) => ({tag: 'random', count: d[3]}) %}
+quantifier -> ob "upto" _ term cb {% (d) => ({tag: 'limit', count: d[3]}) %}
+quantifier -> number {% (d) => ({tag: 'eq', count: d[0]}) %}
+
+#quantifier -> "~" _ number {% (d) => ({tag: 'amapLimit', count: d[2]}) %}
+#quantifier -> "max" _ number {% (d) => ({tag: 'limit', count: d[2]}) %}
+
 term -> op _ "-" _ term cp {% (d) => ({tag: 'neg', value: d[4]}) %}
 term -> var {% (d) => ({tag: 'var', value: d[0]}) %}
-term -> [0-9]:+ {% (d) => ({tag: 'int', value: parseInt(d[0].join(""))}) %}
+term -> number {% (d) => ({tag: 'int', value: d[0]}) %}
 term -> "'" identifier {% (d) => ({tag: 'sym', value: d[1]}) %}
 term -> term "." identifier {% (d) => ({tag: 'dot', left: d[0], right: d[2]}) %}
 term -> "." predicate {% (d) => ({tag: 'dot', left: null, right: d[1]}) %}
 term -> fn_call {% id %}
 term -> binding_expr {% id %}
 term -> indexical_expr {% id %}
+temr -> quantifier {% id %}
 
 binRel -> "=" {% () => '=' %}
 
@@ -90,13 +102,6 @@ derivation_block -> (_ _derivation):* _ {% (d) => d[0].map((r) => r[1]) %}
 
 ## section: rules
 #
-quantifier -> number {% (d) => ({tag: 'eq', count: d[0]}) %}
-quantifier -> op "random" _ number cp {% (d) => ({tag: 'random', count: d[3]}) %}
-quantifier -> "any" {% (d) => ({tag: 'any'}) %}
-quantifier -> "all" {% (d) => ({tag: 'all'}) %}
-#quantifier -> "~" _ number {% (d) => ({tag: 'amapLimit', count: d[2]}) %}
-#quantifier -> "max" _ number {% (d) => ({tag: 'limit', count: d[2]}) %}
-
 event_expr -> identifier {% (d) => ({ tag: "literal", name: d[0], tuples: []}) %}
 event_expr -> identifier _ "[" _ indexical_list _ "]" {% (d) => ({ tag: "with-tuples", name: d[0], tuples: d[4]}) %}
 #event_expr -> identifier _ "[" _ pure_query _ "]" {% (d) => ({ tag: "with-tuples", name: d[0], tuples: d[4]}) %}
@@ -130,20 +135,6 @@ indexical_stmt -> "~" identifier _ ":=" _ term {% (d) => ({ tag: "deictic", id: 
 indexical_list -> indexical_stmt (_ ","):? {% (d) => [d[0]] %}
 indexical_list -> indexical_stmt comma indexical_list {% (d) => [d[0], ...d[2]] %}
 
-#episode_expr -> "-" _ pure_query {% (d) => [{tag: "retract", query: d[2] }] %}
-#episode_expr -> op pure_query cp _ "=>" _ op pure_query cp {% (d) => [{ tag: "modification", before: d[1], after: d[7] }] %}
-#episode_expr -> "+(" _ pure_query cp {% (d) => [{tag: "assert", tuples: d[2] }] %}
-#episode_expr -> term __ "chooses" __ quantifier __ op pure_query cp
-#  {% (d) => [{ tag: "subquery", query: d[7], name: '?'},
-#             { tag: "choose", actor: d[0], quantifier: d[4], name: '?' }] %}
-#episode_expr -> identifier _ ":=" _ "count" _ op pure_query cp
-#  {% (d) => [{ tag: "subquery", query: d[7], name: d[0] },
-#             { tag: "count", name: d[0] }] %}
-#episode_expr -> term _ bin_op _ term
-#  {% (d) => [{tag: 'binOp', operator: d[2], l: d[0], r: d[4]}] %}
-#episode_expr -> "!done" {% () => [{tag: "done"}] %}
-#episode_expr -> "!do" __ event_expr {% (d) => [{tag: "do", value: d[2]}] %}
-
 episode_list -> episode_expr (_ ","):? {% (d) => d[0] %}
 episode_list -> episode_expr comma episode_list {% (d) => d[0].concat(d[2]) %}
 
@@ -151,7 +142,6 @@ rule_body -> episode_list {% id %}
 rule_body -> null {% () => [] %}
 
 rule_separator -> _ ":" _ {% id %}
-#rule_separator -> _ "->" _ {% () => 'trigger' %}
 
 trigger -> "!" identifier  {% (d) => ({type: 'before', predicate: d[1]}) %}
 trigger -> identifier  {% (d) => ({type: 'during', predicate: d[0]}) %}
@@ -166,3 +156,20 @@ rule -> rule_header _ rule_body _ "." {% (d) => ({header: d[0], body: d[2] }) %}
 program -> (_ rule):* _ {% (d) => d[0].map((r) => r[1]) %}
 
 main -> program _ {% id %}
+
+# Junk
+
+#episode_expr -> "-" _ pure_query {% (d) => [{tag: "retract", query: d[2] }] %}
+#episode_expr -> op pure_query cp _ "=>" _ op pure_query cp {% (d) => [{ tag: "modification", before: d[1], after: d[7] }] %}
+#episode_expr -> "+(" _ pure_query cp {% (d) => [{tag: "assert", tuples: d[2] }] %}
+#episode_expr -> term __ "chooses" __ quantifier __ op pure_query cp
+#  {% (d) => [{ tag: "subquery", query: d[7], name: '?'},
+#             { tag: "choose", actor: d[0], quantifier: d[4], name: '?' }] %}
+#episode_expr -> identifier _ ":=" _ "count" _ op pure_query cp
+#  {% (d) => [{ tag: "subquery", query: d[7], name: d[0] },
+#             { tag: "count", name: d[0] }] %}
+#episode_expr -> term _ bin_op _ term
+#  {% (d) => [{tag: 'binOp', operator: d[2], l: d[0], r: d[4]}] %}
+#episode_expr -> "!done" {% () => [{tag: "done"}] %}
+#episode_expr -> "!do" __ event_expr {% (d) => [{tag: "do", value: d[2]}] %}
+#rule_separator -> _ "->" _ {% () => 'trigger' %}

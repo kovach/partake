@@ -24,7 +24,7 @@ import {
   isVar,
 } from "./join.js";
 import {
-  fixRules,
+  parseRules,
   substitute,
   core,
   weight,
@@ -72,7 +72,6 @@ function loadSeveral(files, fn) {
 }
 
 function loadRules(fn) {
-  throw "";
   Promise.all([fetch("si3.mm"), fetch("si3.sad")])
     .then((res) => Promise.all(res.map((p) => p.text())))
     .then(([t1, t2]) => fn(parseProgram(t1), parseRules(t2)));
@@ -80,12 +79,6 @@ function loadRules(fn) {
 
 function main(stories, rules) {
   timeFn(() => mainTest(stories, rules));
-}
-
-function parseRules(text) {
-  let removeCommentFromLine = (s) => /[^#]*/.exec(s);
-  let removeComments = (text) => text.split("\n").map(removeCommentFromLine).join("\n");
-  return fixRules(parseNonterminal("derivation_block", removeComments(text)));
 }
 
 function loadRuleTuples(state, stories) {

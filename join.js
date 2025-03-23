@@ -402,11 +402,9 @@ function freshId() {
 
 function getIndexical(tag, node) {
   let chase = ({ binding, parent }) => {
-    console.log("chase: ", tag, binding, parent);
     if (binding.has(tag)) return binding.get(tag);
     if (parent) return chase(parent.vars);
   };
-  //console.log("..", node);
   return chase(node.vars);
 }
 

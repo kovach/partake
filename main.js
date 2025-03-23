@@ -1,7 +1,7 @@
-import { assert } from "./collections.js";
+import { assert, toTag } from "./collections.js";
 import { parseNonterminal, parseProgram } from "./parse.js";
 import { mkInt, mkBox, mkBind, valEqual, af, Binding, isVar } from "./join.js";
-import { mkSeminaive } from "./derive.js";
+import { mkSeminaive, parseRules } from "./derive.js";
 import {
   Actor,
   canonUpdate,
@@ -16,7 +16,10 @@ import {
   ppe,
   processInput,
   tip,
+  offer,
+  drive,
 } from "./episode.js";
+import { resetSeed } from "./random.js";
 
 Map.prototype.toJSON = function () {
   return Object.fromEntries(this);
@@ -104,6 +107,7 @@ let mkjs = () => {
       console.log("!!!!!!!!!! ", ...args);
     },
     add: ({ value: a }, { value: b }) => mkInt(a + b),
+    sub: ({ value: a }, { value: b }) => mkInt(a - b),
     _eq: tor((a, b) => {
       return valEqual(a, b);
     }),
@@ -133,28 +137,49 @@ let mkjs = () => {
 
 let chk = (e, str = "") => console.log(str, JSON.stringify(json(e), null, 2));
 
-function drive(prog, e, print = true) {
-  let gas = 100;
-  let steps = 0;
-  if (print) chk(e, "start: ");
-  while (steps++ < gas && !episodeDone(e)) {
-    e = filterDone(e);
-    let u = canonUpdate(e);
-    if (!u) break;
-    e = processInput(prog, null, e, u);
-    prog.ec.solve();
-    if (print) chk(e);
-  }
-  e = filterDone(e);
-  console.log("steps: ", steps - 1);
-  if (steps >= gas) throw "ran out of gas";
-  return e;
-}
-
 function tob(str) {
   let x = parseNonterminal("binding_expr", str);
   x = new Binding(x.value);
   return x;
+}
+
+let i = toTag(tob);
+
+function printDb(ec, omit = []) {
+  ec.print(omit);
+  console.log("db.size: ", ec.getState().dbAggregates.size()); // 1426 390
+}
+function runScript(scr, prog, e) {
+  for (let s of scr) {
+    if (s === "?") {
+      e = drive(prog, e);
+    } else {
+      e = offer(prog, e, s);
+    }
+  }
+  // always
+  e = drive(prog, e, (print = false));
+  //chk(e);
+  prog.ec.solve();
+  return e;
+}
+function load(x, s, omit) {
+  loadSeveral([x + ".said", x + ".part"], ([sad, part]) => {
+    let { text, rules } = parseProgram(part);
+    let inferences = parseRules(sad);
+    console.log(text);
+    console.log(sad);
+
+    /* begin */
+    var js = mkjs();
+    let ec = mkSeminaive(inferences, js, relTypes);
+    ec.init();
+
+    let prog = { ec, rules };
+    let e = newRootEpisode(ec.defs, rules.during);
+    timeFn(() => runScript(s, prog, e));
+    printDb(ec, omit);
+  });
 }
 
 function t1() {
@@ -173,7 +198,7 @@ function t1() {
 
     function go(e, i) {
       e = drive(prog, e, false);
-      return processInput(prog, null, e, intoUpdate(i, e));
+      return processInput(prog, e, intoUpdate(i, e));
     }
     timeFn(() => {
       // {enemy} later rule first
@@ -219,7 +244,7 @@ function t2() {
 
     function go(e, i) {
       e = drive(prog, e, false);
-      return processInput(prog, null, e, intoUpdate(i, e));
+      return processInput(prog, e, intoUpdate(i, e));
     }
     timeFn(() => {
       // always
@@ -237,4 +262,23 @@ function t2() {
   });
 }
 
-window.onload = t2;
+function testDom() {
+  resetSeed();
+  return load(
+    "dom1",
+    [
+      `?`,
+      //i`{Starter: 'me}`,
+      //i``,
+    ],
+    ["copper", "estate", "above", "covered"]
+  );
+}
+
+window.onload = testDom;
+
+/* fix todo:
+
+in-supply
+
+*/

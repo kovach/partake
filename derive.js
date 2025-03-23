@@ -16,8 +16,15 @@ import {
   isSym,
   Binding,
 } from "./join.js";
-import { assert, range, KeyedMap, ArrayMap, MonoidMap } from "./collections.js";
-import { dotExpandQuery } from "./parse.js";
+import {
+  assert,
+  range,
+  KeyedMap,
+  ArrayMap,
+  MonoidMap,
+  CounterMap,
+} from "./collections.js";
+import { dotExpandQuery, parseNonterminal } from "./parse.js";
 
 class DB {
   constructor(tuples = []) {
@@ -282,6 +289,12 @@ let mod = {
   },
 };
 
+function parseRules(text) {
+  let removeCommentFromLine = (s) => /[^#]*/.exec(s);
+  let removeComments = (text) => text.split("\n").map(removeCommentFromLine).join("\n");
+  return fixRules(parseNonterminal("derivation_block", removeComments(text)));
+}
+
 /* Main logic: iteratively derive and aggregate implications of `program.rules`.
  * mutates state
  */
@@ -351,14 +364,14 @@ function mkSeminaive(r, js, relationTypes) {
   };
   obj.print = (filter = []) => {
     //let tupleCmp = (a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b));
-    let excluded = 0;
+    let excluded = new CounterMap();
     function pp(ps) {
       return (
         ps
           //.sort(tupleCmp)
           .map(([tag, ...terms]) => {
             if (filter.includes(tag)) {
-              excluded++;
+              excluded.add(tag, 1);
               return "";
             }
             // TODO: factor out and reuse
@@ -381,7 +394,9 @@ function mkSeminaive(r, js, relationTypes) {
       );
     }
     console.log(pp(af(dbAggregates.all()).map(([core, w]) => [...core, w])));
-    console.log("hidden tuple count: ", excluded);
+    for (let [k, { count }] of excluded.entries()) {
+      console.log(`hidden tuple count [${k}]: ${count}`);
+    }
   };
 
   return obj;
@@ -566,7 +581,7 @@ function addAtom(state, c, w = mkInt(1)) {
 }
 
 export {
-  fixRules,
+  parseRules,
   emptyState,
   evalQuery,
   substitute,
