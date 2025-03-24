@@ -4,10 +4,7 @@ import { mkInt, mkBox, mkBind, valEqual, af, Binding, isVar } from "./join.js";
 import { mkSeminaive, parseRules } from "./derive.js";
 import {
   Actor,
-  canonUpdate,
   episode,
-  episodeDone,
-  filterDone,
   Input,
   intoUpdate,
   json,
@@ -50,47 +47,6 @@ function loadSeveral(files, fn) {
 
 let _true = mkInt(1);
 let labelSep = "/";
-
-let _relTypes = {
-  located: "last",
-
-  owner: "last",
-
-  delay: "max",
-  "next-delay": "min",
-  "max-tip": "max",
-  range: "min",
-
-  steps: "num",
-  forceSteps: "num",
-  energy: "num",
-  "card-plays": "num",
-};
-
-function mainFoo() {
-  let b = new Binding();
-  function tp(o) {
-    return episode.tip(tip.mk(b, o));
-  }
-  let turn = operation.do("turn", []);
-  let done = episode.done();
-  let es = [
-    episode.done(),
-    tp(turn),
-    episode.branch(Actor.seq, []),
-    episode.branch(Actor.seq, { a: episode.done() }),
-    episode.branch(Actor.seq, { a: tp(turn) }),
-    episode.branch(Actor.any, { a: tp(turn), b: tp(turn) }),
-    episode.branch(Actor.any, { a: done, b: tp(turn) }),
-    episode.branch(Actor.all, { a: done, b: tp(turn) }),
-  ];
-  // 5x true false 2x true
-  for (let e of es) {
-    //console.log(JSON.stringify(e), episodeDone(e));
-    console.log(e.canonical());
-    //console.log(JSON.stringify(e), e.canonical());
-  }
-}
 
 let mkjs = () => {
   function tor(fn) {
@@ -263,6 +219,15 @@ function t2() {
   });
 }
 
+function test() {
+  let relTypes = {
+    located: "last",
+  };
+
+  resetSeed();
+  return load("simple", relTypes, [`?`, { tag: "poke" }], []);
+}
+
 function testDom() {
   let relTypes = {
     located: "last",
@@ -273,21 +238,12 @@ function testDom() {
     "dom1",
     relTypes,
     [
-      `?`,
-      //i`{Starter: 'me}`,
-      //i``,
+      `?`, // setup
+      { tag: Input.accept }, // no action to play
+      //{ tag: Input.refine, query: parseNonterminal("pure_query", "") },
     ],
     ["copper", "estate", "above", "covered"]
   );
-}
-
-function test() {
-  let relTypes = {
-    located: "last",
-  };
-
-  resetSeed();
-  return load("simple", relTypes, [`?`], []);
 }
 
 window.onload = testDom;

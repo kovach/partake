@@ -93,4 +93,14 @@ draw-card:
   stack/top ~player.deck C,
   +located C -> ~player.hand.
 
+#    Players take turns.
+#    Each turn has three phases: Action, then Buy, then Clean-up, which you can remember as ABC.
+turn: ~action-phase, ~buy-phase, ~clean-up-phase.
+
+#    In your Action phase, you can play one Action card from your hand.
+action-phase:
+  choose [upto 1] (located C -> ~player.hand,
+                   action C),
+  ~play [ ~card := C ].
+
 exit.

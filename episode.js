@@ -1,8 +1,8 @@
-import { assert, KeyedMap } from "./collections.js";
+import { assert } from "./collections.js";
 import { addAtom, core, fixQuery, substitute, weight } from "./derive.js";
 import { af, Binding, evalTermStrict, freshId, ppTerm, uniqueInt } from "./join.js";
 import { parseNonterminal } from "./parse.js";
-import { jsf, randomSample, resetSeed } from "./random.js";
+import { randomSample } from "./random.js";
 
 // todo: (pick n), random
 let Actor = {
@@ -12,6 +12,14 @@ let Actor = {
   eq: "eq",
   upto: "upto",
   random: "random",
+};
+
+let Input = {
+  poke: "poke",
+  stop: "stop",
+  none: "none",
+  accept: "accept",
+  refine: "refine",
 };
 
 let episode = {
@@ -125,61 +133,23 @@ function newEpisode(defs, binding, tag, during, is, parent = null) {
   return node;
 }
 
-function processInput(ec, episode, input, parent = null) {
-  switch (episode.tag) {
-    case "node":
-      return { ...episode, body: processInput(ec, episode.body, input, episode) };
-    case "ep/done":
-      assert(input === Input.none);
-      return episode;
-    case "tip":
-      let { value } = episode;
-      return stepTip(ec, parent, value, input);
-    case "branch": {
-      let { actor, cases } = episode;
-      let def = (filter) => {
-        assert(kv(cases).some(([k, _v]) => input[k]));
-        assert(kv(input).every(([k, v]) => cases[k]));
-        let x = {
-          ...episode,
-          cases: objFilterMap(cases, (child, key) =>
-            input[key] !== undefined
-              ? processInput(ec, child, input[key], parent)
-              : filter
-              ? undefined
-              : { ...child }
-          ),
-        };
-        return x;
-      };
-      switch (actor.tag) {
-        case Actor.any:
-        case Actor.seq:
-          return def(false);
-        case Actor.all:
-          return def(false); // ignored
-        case Actor.random:
-        case Actor.eq: {
-          return {
-            ...def(true),
-            actor: { tag: Actor.all },
-          };
-        }
-        default:
-          debugger;
-      }
-    }
+function canonicalOperation(op) {
+  switch (op.tag) {
+    case "op/done": // needs to convert into episode.done
+    case "cases": // just convert
+    case "observation":
+    case "assert":
+    case "do":
+    case "indexical":
+    case "subQuery":
+      return true;
+    case "choose":
+      if (op.actor.tag === Actor.random) return true;
+      return false; // todo
     default:
       debugger;
   }
 }
-
-let Input = {
-  poke: "poke",
-  stop: "stop",
-  none: "none",
-};
-
 function canonUpdate(episode) {
   switch (episode.tag) {
     case "node":
@@ -190,7 +160,7 @@ function canonUpdate(episode) {
       let {
         value: { operation },
       } = episode;
-      if (canonicalOperation(operation)) return Input.poke;
+      if (canonicalOperation(operation)) return { tag: Input.poke };
       return undefined;
     case "branch":
       let { actor, cases } = episode;
@@ -264,46 +234,6 @@ function intoUpdate(op, episode) {
   }
 }
 
-function canonicalOperation(op) {
-  switch (op.tag) {
-    case "op/done": // needs to convert into episode.done
-    case "cases": // just convert
-    case "observation":
-    case "assert":
-    case "do":
-    case "indexical":
-    case "subQuery":
-      return true;
-    case "choose":
-      if (op.actor.tag === Actor.random) return true;
-      return false; // todo
-    default:
-      debugger;
-  }
-}
-function filterDone(episode) {
-  switch (episode.tag) {
-    case "branch":
-      let vs = v(episode.cases);
-      if (vs.length === 1) {
-        return filterDone(vs[0]);
-      }
-      return {
-        ...episode,
-        cases: objFilterMap(episode.cases, (v) =>
-          episodeDone(v) ? undefined : filterDone(v)
-        ),
-      };
-    case "node":
-      return { ...episode, body: filterDone(episode.body) };
-    case "ep/done":
-    case "tip":
-      return episode;
-    default:
-      debugger;
-  }
-}
-
 function episodeDone(episode) {
   switch (episode.tag) {
     case "branch":
@@ -319,26 +249,75 @@ function episodeDone(episode) {
   }
 }
 
+function processInput(ec, episode, input, parent = null) {
+  switch (episode.tag) {
+    case "node":
+      return { ...episode, body: processInput(ec, episode.body, input, episode) };
+    case "ep/done":
+      assert(input === Input.none);
+      return episode;
+    case "tip":
+      let { value } = episode;
+      return stepTip(ec, parent, value, input);
+    case "branch": {
+      let { actor, cases } = episode;
+      let def = (filter) => {
+        assert(kv(cases).some(([k, _v]) => input[k]));
+        assert(kv(input).every(([k, v]) => cases[k]));
+        let x = {
+          ...episode,
+          cases: objFilterMap(cases, (child, key) =>
+            input[key] !== undefined
+              ? processInput(ec, child, input[key], parent)
+              : filter
+              ? undefined
+              : { ...child }
+          ),
+        };
+        return x;
+      };
+      switch (actor.tag) {
+        case Actor.any:
+        case Actor.seq:
+          return def(false);
+        case Actor.all:
+          return def(false); // ignored
+        case Actor.random:
+        case Actor.eq: {
+          return {
+            ...def(true),
+            actor: { tag: Actor.all },
+          };
+        }
+        default:
+          debugger;
+      }
+    }
+    default:
+      debugger;
+  }
+}
+
 function tp(b, x) {
   return episode.tip(tip.mk(b, x));
 }
 
-function stepTip({ ec, rules }, parentNode, { binding, operation }, choice) {
+function stepTip({ ec, rules }, parentNode, { binding, operation: op }, choice) {
   let state = ec.getState();
   let defs = ec.defs;
   let location = parentNode;
 
-  if (choice === Input.stop) {
+  if (choice.tag === Input.stop) {
     return done();
   }
 
-  if (operation.tag !== "choose") assert(choice === Input.poke);
+  if (op.tag !== "choose") assert(choice.tag === Input.poke);
 
-  switch (operation.tag) {
+  switch (op.tag) {
     case "op/done":
       return done();
     case "do":
-      let { name, pairs, k } = operation;
+      let { name, pairs, k } = op;
       // todo: substitute pairs
       let it = newEpisode(ec.defs, binding, name, rules.during, pairs, parentNode);
       return episode.seq(it, tp(binding, k));
@@ -346,7 +325,7 @@ function stepTip({ ec, rules }, parentNode, { binding, operation }, choice) {
       let {
         tuple: { tag, terms },
         k,
-      } = operation;
+      } = op;
       let pattern = [tag, ...terms];
       binding = binding.clone();
       let atom = substitute(defs.js, parentNode, binding, pattern, true);
@@ -357,7 +336,7 @@ function stepTip({ ec, rules }, parentNode, { binding, operation }, choice) {
       let {
         k,
         pattern: { tag, terms },
-      } = operation;
+      } = op;
       let pattern = [tag].concat(terms);
       let bindings = ec.query(parentNode, [pattern], binding);
       if (bindings.length === 0) {
@@ -368,7 +347,7 @@ function stepTip({ ec, rules }, parentNode, { binding, operation }, choice) {
       }
     }
     case "cases": {
-      let { actor, cases } = operation;
+      let { actor, cases } = op;
       return episode.branch(
         actor,
         objMap(cases, (c) => episode.tip(tip.mk(binding, c)))
@@ -376,7 +355,7 @@ function stepTip({ ec, rules }, parentNode, { binding, operation }, choice) {
     }
     case "choose": {
       let bindings;
-      let { actor, value, k } = operation;
+      let { actor, value, k } = op;
       // initially solve query, or filter options based on `choice`
       if (value.query) {
         let query = fixQuery(value.query);
@@ -386,51 +365,70 @@ function stepTip({ ec, rules }, parentNode, { binding, operation }, choice) {
         bindings = value.options;
       }
       let initialLength = bindings.length;
-      if (choice !== Input.poke) bindings = bindings.filter((b) => choice.le(b));
+      function actorValue() {
+        assert(actor.count !== undefined);
+        let { value } = evalTermStrict(defs.js, parentNode, binding, actor.count);
+        return value;
+      }
+      switch (choice.tag) {
+        case Input.poke:
+          break;
+        case Input.accept:
+          assert(actor.tag === Actor.upto);
+          return episode.branch(
+            { tag: Actor.all },
+            bindings.map((b) => tp(b, k))
+          );
+        case Input.refine:
+          debugger;
+          let query = fixQuery(choice.query);
+          bindings = ec.queries(parentNode, query, bindings);
+          if (actor.tag === Actor.eq) {
+            let value = actorValue();
+            assert(bindings.length >= value, "invalid choice");
+          }
+          //bindings = bindings.filter((b) => choice.le(b));
+          break;
+        default:
+          debugger;
+      }
       //assert(bindings.length < initialLength, "irrelevant choice");
       switch (actor.tag) {
-        case "eq": {
-          let { value } = evalTermStrict(defs.js, parentNode, binding, actor.count);
-          // todo
-          assert(bindings.length >= value, "invalid choice");
-          if (bindings.length === value) {
-            return episode.branch(
-              { tag: Actor.all },
-              bindings.map((b) => tp(b, k))
-            );
-          }
-          break;
-        }
-        case "random": {
-          let { value } = evalTermStrict(defs.js, parentNode, binding, actor.count);
-          if (bindings.length === 0) return done();
-          //assert(bindings.length >= value, "invalid choice");
+        case Actor.random: {
+          let value = actorValue();
           bindings = randomSample(bindings, value);
+          return episode.branch(
+            { tag: Actor.all },
+            bindings.map((b) => tp(b, k))
+          );
+        }
+        case Actor.upto: {
+          return tp(binding, { ...op, value: { options: bindings } });
+        }
+        case Actor.eq: {
+          let { value } = evalTermStrict(defs.js, parentNode, binding, actor.count);
+          if (bindings.length < value) return done();
           if (bindings.length === value) {
             return episode.branch(
               { tag: Actor.all },
               bindings.map((b) => tp(b, k))
             );
           }
-          break;
+          return tp(binding, { ...op, value: { options: bindings } });
         }
-        // todo
-        //case "random":
-        //debugger;
-        //bindings = randomSample(bindings, quantifier.count);
-        //return bindings.map(mkRest);
+        default:
+          throw "";
       }
-      return tp(binding, { ...operation, value: { options: bindings } });
+      throw "";
     }
     case "indexical": {
-      let { id, term } = operation;
+      let { id, term } = op;
       let x = evalTermStrict(defs.js, parentNode, binding, term);
       setIndexical(id, x, parentNode);
       return done();
     }
     case "subQuery": {
-      let { query, cmp } = operation;
-
+      let { query, cmp } = op;
       query = fixQuery(query);
       let n = ec.query(parentNode, query, binding).length;
       let ok;
@@ -551,6 +549,29 @@ function convertToNewOp(operations) {
       return operation.subQuery(value, "zero", k);
     }
     // if, not
+    default:
+      debugger;
+  }
+}
+
+function filterDone(episode) {
+  switch (episode.tag) {
+    case "branch":
+      let vs = v(episode.cases);
+      if (vs.length === 1) {
+        return filterDone(vs[0]);
+      }
+      return {
+        ...episode,
+        cases: objFilterMap(episode.cases, (v) =>
+          episodeDone(v) ? undefined : filterDone(v)
+        ),
+      };
+    case "node":
+      return { ...episode, body: filterDone(episode.body) };
+    case "ep/done":
+    case "tip":
+      return episode;
     default:
       debugger;
   }

@@ -198,6 +198,7 @@ function evalQuery(
           // todo: ideally want to warn here instead
           // currently this line can be reached when we try to unify a new positive tuple against a negative pattern
           //assert(!isVar(v), "negated pattern must not contain unbound variables");
+          // todo: I think we can remove
           if (isVar(v)) return;
         }
         let tuple = getOrInsertZero(tg, values);
@@ -320,10 +321,13 @@ function mkSeminaive(r, js, relationTypes) {
       state.init = false;
     }
   };
-  obj.query = (location, query, context = emptyBinding()) => {
+  obj.queries = (location, query, contexts = [emptyBinding()]) => {
     return af(
-      evalQuery({ location, db: dbAggregates, js, relationTypes }, query, [context])
+      evalQuery({ location, db: dbAggregates, js, relationTypes }, query, contexts)
     );
+  };
+  obj.query = (location, query, context = emptyBinding()) => {
+    return obj.queries(location, query, [context]);
   };
   obj.hasWork = () => {
     return (
@@ -428,7 +432,9 @@ function mkSeminaive(r, js, relationTypes) {
         // bind new tuple
         // big hack
         let context;
-        if (weight(tuple).value === 0 && weight(spot).value === 0) {
+        // todo
+        if (true) {
+          //if (true || (weight(tuple).value === 0 && weight(spot).value === 0)) {
           if (tupleValid(tuple, tag(tuple), terms(spot))) {
             context = [extendBinding(emptyBinding(), tuple, terms(spot))];
           } else {

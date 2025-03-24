@@ -47,8 +47,8 @@ indexical_expr -> "~" identifier {% (d) => ({tag: 'indexical', value: d[1]}) %}
 quantifier -> "any" {% (d) => ({tag: 'any'}) %}
 quantifier -> "all" {% (d) => ({tag: 'all'}) %}
 quantifier -> ob "random" _ term cb {% (d) => ({tag: 'random', count: d[3]}) %}
-quantifier -> ob "upto" _ term cb {% (d) => ({tag: 'limit', count: d[3]}) %}
-quantifier -> number {% (d) => ({tag: 'eq', count: d[0]}) %}
+quantifier -> ob "upto" _ term cb {% (d) => ({tag: 'upto', count: d[3]}) %}
+quantifier -> number {% (d) => ({tag: 'eq', count: {tag: 'int', value: d[0]}}) %}
 
 #quantifier -> "~" _ number {% (d) => ({tag: 'amapLimit', count: d[2]}) %}
 #quantifier -> "max" _ number {% (d) => ({tag: 'limit', count: d[2]}) %}
